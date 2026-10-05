@@ -1,0 +1,45 @@
+# Scrape config for the lab. Services that can be scaled (docker compose up --scale history=3)
+# are discovered with DNS A-record lookups against the compose service name, which
+# returns one address per replica.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+scrape_configs:
+  # ---- Temporal server: one container per service, metrics on :8000 ----------
+  - job_name: temporal
+    dns_sd_configs:
+      - {names: [frontend],        type: A, port: 8000, refresh_interval: 5s}
+      - {names: [history],         type: A, port: 8000, refresh_interval: 5s}
+      - {names: [matching],        type: A, port: 8000, refresh_interval: 5s}
+      - {names: [internal-worker], type: A, port: 8000, refresh_interval: 5s}
+    relabel_configs:
+      # Give each target a readable "role" label from the DNS name it was found under.
+      - source_labels: [__meta_dns_name]
+        target_label: role
+
+  # ---- SDK workers (metrics from the Python Rust core on :9000) --------------
+  - job_name: sdk-worker
+    dns_sd_configs:
+      - {names: [sdk-worker],     type: A, port: 9000, refresh_interval: 5s}
+      - {names: [sdk-worker-wf],  type: A, port: 9000, refresh_interval: 5s}
+      - {names: [sdk-worker-act], type: A, port: 9000, refresh_interval: 5s}
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: role
+
+  # ---- Load generator processes (client-side SDK metrics, ports 9001-9004) ---
+  - job_name: loadgen
+    static_configs:
+      - targets: ['loadgen:9001', 'loadgen:9002', 'loadgen:9003', 'loadgen:9004']
+
+  # ---- Infra ------------------------------------------------------------------
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']

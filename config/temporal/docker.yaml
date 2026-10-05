@@ -1,0 +1,109 @@
+# enable-template
+#
+# Minimal Temporal server config for the lab. This is a trimmed version of the
+# upstream config/docker.yaml template (temporalio/temporal, config/docker.yaml)
+# keeping only what the lab needs: Postgres persistence + SQL visibility,
+# Prometheus metrics, per-service RPC ports, and dynamic config polling.
+#
+# The server renders this file as a Go template at startup; values come from
+# the environment set in docker-compose.yml. Read it once end to end: it is the
+# shortest possible map of "what does a Temporal cluster need to know".
+
+log:
+    stdout: true
+    level: {{ default "info" (env "LOG_LEVEL") }}
+
+persistence:
+    # !!! FIXED AT CLUSTER CREATION. Changing this on an existing database makes
+    # the server refuse to start. Use `make reset SHARDS=<n>` to rebuild.
+    numHistoryShards: {{ default "4" (env "NUM_HISTORY_SHARDS") }}
+
+    defaultStore: default
+    visibilityStore: visibility
+
+    datastores:
+        default:
+            sql:
+                pluginName: "postgres12"
+                databaseName: {{ default "temporal" (env "DBNAME") | quote }}
+                connectAddr: {{ env "POSTGRES_SEEDS" }}:{{ default "5432" (env "DB_PORT") }}
+                connectProtocol: "tcp"
+                user: {{ env "POSTGRES_USER" | quote }}
+                password: {{ env "POSTGRES_PWD" | quote }}
+                maxConns: {{ default "20" (env "SQL_MAX_CONNS") }}
+                maxIdleConns: {{ default "20" (env "SQL_MAX_IDLE_CONNS") }}
+                maxConnLifetime: {{ default "1h" (env "SQL_MAX_CONN_TIME") }}
+        visibility:
+            sql:
+                pluginName: "postgres12"
+                databaseName: {{ default "temporal_visibility" (env "VISIBILITY_DBNAME") | quote }}
+                connectAddr: {{ env "POSTGRES_SEEDS" }}:{{ default "5432" (env "DB_PORT") }}
+                connectProtocol: "tcp"
+                user: {{ env "POSTGRES_USER" | quote }}
+                password: {{ env "POSTGRES_PWD" | quote }}
+                maxConns: {{ default "10" (env "SQL_VIS_MAX_CONNS") }}
+                maxIdleConns: {{ default "10" (env "SQL_VIS_MAX_IDLE_CONNS") }}
+                maxConnLifetime: {{ default "1h" (env "SQL_VIS_MAX_CONN_TIME") }}
+
+global:
+    membership:
+        maxJoinDuration: 30s
+        # Address other hosts use to reach this one on the membership (ringpop)
+        # gossip port. Set per-container by the entrypoint in docker-compose.yml.
+        broadcastAddress: "{{ env "TEMPORAL_BROADCAST_ADDRESS" }}"
+    pprof:
+        port: {{ default "0" (env "PPROF_PORT") }}
+    {{- with env "PROMETHEUS_ENDPOINT" }}
+    metrics:
+        prometheus:
+            timerType: {{ default "histogram" (env "PROMETHEUS_TIMER_TYPE") }}
+            listenAddress: {{ . }}
+    {{- end }}
+
+# Each Temporal service is its own process/container here. gRPC = API port,
+# membership = the gossip port used to build the hash rings (history shards,
+# task queue partitions) that decide who owns what.
+services:
+    frontend:
+        rpc:
+            grpcPort: 7233
+            membershipPort: 6933
+            bindOnIP: {{ default "127.0.0.1" (env "BIND_ON_IP") }}
+            httpPort: 7243
+    matching:
+        rpc:
+            grpcPort: 7235
+            membershipPort: 6935
+            bindOnIP: {{ default "127.0.0.1" (env "BIND_ON_IP") }}
+    history:
+        rpc:
+            grpcPort: 7234
+            membershipPort: 6934
+            bindOnIP: {{ default "127.0.0.1" (env "BIND_ON_IP") }}
+    worker:
+        rpc:
+            grpcPort: 7239
+            membershipPort: 6939
+            bindOnIP: {{ default "127.0.0.1" (env "BIND_ON_IP") }}
+
+clusterMetadata:
+    enableGlobalNamespace: false
+    failoverVersionIncrement: 10
+    masterClusterName: "active"
+    currentClusterName: "active"
+    clusterInformation:
+        active:
+            enabled: true
+            initialFailoverVersion: 1
+            rpcName: "frontend"
+            rpcAddress: "127.0.0.1:7233"
+            httpAddress: "127.0.0.1:7243"
+
+dcRedirectionPolicy:
+    policy: "noop"
+
+# Short poll interval so edits to config/dynamicconfig/docker.yaml take effect
+# within seconds during experiments (upstream default is 60s).
+dynamicConfigClient:
+    filepath: "{{ default "/etc/temporal/config/dynamicconfig/docker.yaml" (env "DYNAMIC_CONFIG_FILE_PATH") }}"
+    pollInterval: "5s"

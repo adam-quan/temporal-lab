@@ -1,0 +1,93 @@
+# Dynamic config: hot-reloaded every 5s (see pollInterval in config/temporal/docker.yaml).
+# Edit this file while load is running and watch the effect on the dashboard.
+# Format:   key:
+#             - value: <v>
+#               constraints: {namespace: lab, taskQueueName: lab-tq}   # optional
+#
+# Key names below were checked against the Temporal docs / constants.go, but they
+# do move between server versions. If a change seems to do nothing, check the
+# exact key in common/dynamicconfig/constants.go for your TEMPORAL_VERSION and
+# look for "unknown key" warnings in `docker compose logs frontend history matching`.
+
+# Makes newly-registered search attributes visible immediately (ns-init registers LabRunId/LabShape).
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+
+# ---------------------------------------------------------------------------
+# Phase 3B-1: task queue partitions (default is 4 read / 4 write).
+# Decrease WRITE first, wait for the backlog to drain, then decrease READ.
+# ---------------------------------------------------------------------------
+# matching.numTaskqueueReadPartitions:
+#   - value: 1
+#     constraints: {namespace: lab, taskQueueName: lab-tq}
+# matching.numTaskqueueWritePartitions:
+#   - value: 1
+#     constraints: {namespace: lab, taskQueueName: lab-tq}
+
+# ---------------------------------------------------------------------------
+# Phase 3C: back-pressure. Per-host per-namespace RPS at the frontend, and the
+# cluster-wide variant (overrides the per-host one when non-zero).
+# Lower these until StartWorkflowExecution starts returning RESOURCE_EXHAUSTED.
+# ---------------------------------------------------------------------------
+# frontend.namespaceRPS:
+#   - value: 1000
+#     constraints: {namespace: lab}
+# frontend.globalNamespaceRPS:
+#   - value: 1000
+#     constraints: {namespace: lab}
+
+# ---------------------------------------------------------------------------
+# Persistence QPS caps per service (a rate limiter in front of the DB).
+# Set low to watch rate limiting show up as latency/errors before the DB does.
+# ---------------------------------------------------------------------------
+# frontend.persistenceMaxQPS:
+#   - value: 500
+# history.persistenceMaxQPS:
+#   - value: 1000
+# matching.persistenceMaxQPS:
+#   - value: 500
+
+# ---------------------------------------------------------------------------
+# Phase 4 #15-17: history / payload limits. Lower them so you hit limits in
+# seconds instead of minutes. (Defaults: warn 10240 / error 51200 events.)
+# ---------------------------------------------------------------------------
+# limit.historyCount.suggestContinueAsNew:
+#   - value: 1000
+# limit.historyCount.warn:
+#   - value: 2000
+# limit.historyCount.error:
+#   - value: 5000
+# limit.numPendingActivities.error:
+#   - value: 200
+# limit.blobSize.warn:
+#   - value: 262144
+# limit.blobSize.error:
+#   - value: 1048576
+
+# ---------------------------------------------------------------------------
+# Hot shard (experiments/hot-shard.md, `make hotshard`). Uncomment ONE fix at a
+# time, wait 5 s for the reload, then re-run the test with --expect healthy.
+# ---------------------------------------------------------------------------
+# Detection aid: warn in the history logs when a shard's task queues back up.
+# history.emitShardLagLog:
+#   - value: true
+#
+# Guardrail 1 (Kind 2, same-ID start/restart loops): reject starts of the same
+# workflow ID closer together than the interval with RESOURCE_EXHAUSTED / BusyWorkflow.
+# history.enableWorkflowIdReuseStartTimeValidation:
+#   - value: true
+#     constraints: {namespace: lab}
+# history.workflowIdReuseMinimalInterval:
+#   - value: 2s
+#     constraints: {namespace: lab}
+#
+# Guardrail 2 (multi-tenant): cap ONE namespace's DB rate on each shard. It also
+# throttles that namespace's own workflows on the shard, so it protects OTHER namespaces.
+# history.persistencePerShardNamespaceMaxQPS:
+#   - value: 100
+#     constraints: {namespace: lab}
+#
+# Kind 1 fix (SQL only, needs DB headroom): concurrent writes per shard (default 1).
+# Read when a shard is LOADED, so it needs `docker compose restart history` (not just the 5 s reload).
+# history.shardIOConcurrency:
+#   - value: 4

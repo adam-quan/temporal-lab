@@ -1,0 +1,306 @@
+name: lab
+
+# ------------------------------------------------------------------------------
+# Temporal internals lab.
+#   postgres <- toxiproxy <- { frontend, history, matching, internal-worker }
+#   Every Temporal service is its own container so you can kill / pause / throttle
+#   / scale each one independently:  docker compose up -d --scale history=3
+# ------------------------------------------------------------------------------
+
+x-server: &server
+  image: temporalio/server:${TEMPORAL_VERSION}
+  restart: ${RESTART_POLICY:-no}
+  depends_on:
+    db-init:
+      condition: service_completed_successfully
+  volumes:
+    - ./config/temporal/docker.yaml:/etc/temporal/config/docker.yaml:ro
+    - ./config/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+  entrypoint: ["/bin/sh", "-c"]
+  # BIND_ON_IP / TEMPORAL_BROADCAST_ADDRESS must be this container's real IP so
+  # services can find each other on the membership ring (a static value would
+  # break `--scale`). $$ is compose's escape for a literal $.
+  command:
+    - |
+      BIND_ON_IP="$$(hostname -i | awk '{print $$1}')"
+      export BIND_ON_IP
+      export TEMPORAL_BROADCAST_ADDRESS="$$BIND_ON_IP"
+      exec temporal-server --root /etc/temporal --env docker start --service="$$SERVICE"
+  environment: &server-env
+    DB: postgres12
+    # Route through toxiproxy so DB faults (latency, blackhole, reset) can be injected live.
+    POSTGRES_SEEDS: toxiproxy
+    DB_PORT: "5432"
+    POSTGRES_USER: temporal
+    POSTGRES_PWD: temporal
+    DBNAME: temporal
+    VISIBILITY_DBNAME: temporal_visibility
+    NUM_HISTORY_SHARDS: ${NUM_HISTORY_SHARDS:-4}
+    PROMETHEUS_ENDPOINT: 0.0.0.0:8000
+    LOG_LEVEL: ${SERVER_LOG_LEVEL:-info}
+
+x-lab-python: &lab-python
+  image: temporal-lab-python:local
+  build:
+    context: .
+    dockerfile: lab/Dockerfile
+  environment: &lab-env
+    TEMPORAL_ADDRESS: frontend:7233
+    TEMPORAL_NAMESPACE: lab
+    METRICS_PORT: "9000"
+    EVOLVING_VARIANT: ${EVOLVING_VARIANT:-v1}
+    MAX_CONCURRENT_WORKFLOW_TASKS: ${W_MAX_CONCURRENT_WORKFLOW_TASKS:-}
+    MAX_CONCURRENT_ACTIVITIES: ${W_MAX_CONCURRENT_ACTIVITIES:-}
+    MAX_CONCURRENT_WORKFLOW_TASK_POLLS: ${W_MAX_CONCURRENT_WORKFLOW_TASK_POLLS:-}
+    MAX_CONCURRENT_ACTIVITY_TASK_POLLS: ${W_MAX_CONCURRENT_ACTIVITY_TASK_POLLS:-}
+    MAX_CACHED_WORKFLOWS: ${W_MAX_CACHED_WORKFLOWS:-}
+    ACTIVITY_THREADS: ${W_ACTIVITY_THREADS:-}
+    STICKY_QUEUE_TIMEOUT_S: ${W_STICKY_QUEUE_TIMEOUT_S:-}
+    MAX_ACTIVITIES_PER_SECOND: ${W_MAX_ACTIVITIES_PER_SECOND:-}
+    MAX_TASK_QUEUE_ACTIVITIES_PER_SECOND: ${W_MAX_TASK_QUEUE_ACTIVITIES_PER_SECOND:-}
+    TUNER: ${W_TUNER:-fixed}
+    POLLER_AUTOSCALE: ${W_POLLER_AUTOSCALE:-0}
+    GRACEFUL_SHUTDOWN_S: ${W_GRACEFUL_SHUTDOWN_S:-5}
+    DEBUG_MODE: ${W_DEBUG_MODE:-0}
+    LOG_LEVEL: ${W_LOG_LEVEL:-INFO}
+  depends_on:
+    ns-init:
+      condition: service_completed_successfully
+
+services:
+  # ============================== Persistence =================================
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-16-alpine}
+    restart: ${RESTART_POLICY:-no}
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    command:
+      - postgres
+      - -c
+      - max_connections=1000
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - synchronous_commit=${PG_SYNC_COMMIT:-on}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${PG_HOST_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # Fault-injection proxy between Temporal and Postgres. Control API on :8474.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:${TOXIPROXY_VERSION:-2.9.0}
+    restart: ${RESTART_POLICY:-no}
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./config/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "${TOXIPROXY_HOST_PORT:-8474}:8474"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: create databases and apply Temporal's SQL schemas (talks to Postgres directly).
+  db-init:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SQL_PASSWORD: temporal
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        T="temporal-sql-tool --plugin postgres12 --ep postgres -u temporal -p 5432"
+        # `create` / `setup-schema` fail harmlessly if they already ran (restarts of the lab).
+        $$T --db temporal create || true
+        $$T --db temporal_visibility create || true
+        $$T --db temporal setup-schema -v 0.0 || true
+        $$T --db temporal update-schema -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+        $$T --db temporal_visibility setup-schema -v 0.0 || true
+        $$T --db temporal_visibility update-schema -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+        echo "schema ready"
+
+  # ============================== Temporal services ============================
+  # Ports 7233-7243 on the host map to 7233 in the container so that
+  # `--scale frontend=N` works (each replica takes the next free host port).
+  frontend:
+    <<: *server
+    environment:
+      <<: *server-env
+      SERVICE: frontend
+    ports:
+      - "${FRONTEND_HOST_PORTS:-7233-7243}:7233"
+
+  history:
+    <<: *server
+    environment:
+      <<: *server-env
+      SERVICE: history
+
+  matching:
+    <<: *server
+    environment:
+      <<: *server-env
+      SERVICE: matching
+
+  # Temporal's *internal* worker service (system workflows: scheduler, batch ops...).
+  internal-worker:
+    <<: *server
+    environment:
+      <<: *server-env
+      SERVICE: worker
+
+  # One-shot: wait for the cluster, create namespace "lab" + search attributes.
+  ns-init:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION}
+    depends_on:
+      - frontend
+      - history
+      - matching
+      - internal-worker
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export TEMPORAL_ADDRESS=frontend:7233
+        until temporal operator cluster health >/dev/null 2>&1; do echo "waiting for frontend..."; sleep 2; done
+        until temporal operator namespace describe -n lab >/dev/null 2>&1 || \
+              temporal operator namespace create -n lab --retention 24h --description "temporal-lab"; do
+          echo "waiting to create namespace..."; sleep 2
+        done
+        until temporal operator search-attribute list -n lab 2>/dev/null | grep -q LabRunId || \
+              temporal operator search-attribute create -n lab --name LabRunId --type Keyword --name LabShape --type Keyword; do
+          echo "waiting to create search attributes..."; sleep 2
+        done
+        echo "namespace + search attributes ready"
+
+  # Long-running shell with the temporal CLI + tdbg:  make cli ARGS="workflow list"
+  admin-tools:
+    image: temporalio/admin-tools:${TEMPORAL_VERSION}
+    entrypoint: ["sleep", "infinity"]
+    environment:
+      TEMPORAL_ADDRESS: frontend:7233
+      TEMPORAL_NAMESPACE: lab
+    depends_on:
+      - frontend
+
+  ui:
+    image: temporalio/ui:${UI_VERSION:-2.54.1}
+    environment:
+      TEMPORAL_ADDRESS: frontend:7233
+      TEMPORAL_DEFAULT_NAMESPACE: lab
+    ports:
+      - "${UI_HOST_PORT:-8080}:8080"
+    depends_on:
+      - frontend
+
+  # ============================== SDK workers (Python) =========================
+  # Role "all": one process polls workflow AND activity tasks on task queue lab-tq.
+  sdk-worker:
+    <<: *lab-python
+    restart: ${RESTART_POLICY:-no}
+    command: ["python", "-m", "lab.worker"]
+    environment:
+      <<: *lab-env
+      ROLE: all
+      TASK_QUEUE: lab-tq
+
+  # Profile "split": workflow workers and activity workers as separate fleets on
+  # separate task queues (scale/starve them independently).
+  #   docker compose --profile split up -d   (and stop sdk-worker)
+  sdk-worker-wf:
+    <<: *lab-python
+    profiles: ["split"]
+    restart: ${RESTART_POLICY:-no}
+    command: ["python", "-m", "lab.worker"]
+    environment:
+      <<: *lab-env
+      ROLE: workflow
+      TASK_QUEUE: lab-wf
+
+  sdk-worker-act:
+    <<: *lab-python
+    profiles: ["split"]
+    restart: ${RESTART_POLICY:-no}
+    command: ["python", "-m", "lab.worker"]
+    environment:
+      <<: *lab-env
+      ROLE: activity
+      TASK_QUEUE: lab-act
+
+  # Load generator: run on demand.  make load ARGS="ramp --shape noop --rates 10,50,100 --step-seconds 60"
+  loadgen:
+    <<: *lab-python
+    profiles: ["tools"]
+    entrypoint: ["python", "-m", "lab.load"]
+    environment:
+      <<: *lab-env
+      METRICS_PORT: ""
+      METRICS_PORT_BASE: "9001"
+    volumes:
+      - ./results:/app/results
+
+  # ============================== Observability ================================
+  prometheus:
+    image: prom/prometheus:${PROM_VERSION:-v3.1.0}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "${PROM_HOST_PORT:-9090}:9090"
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-11.6.0}
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/temporal-lab.json
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+
+  # Per-container CPU / memory / network. (On Docker Desktop for macOS/Windows
+  # cAdvisor often cannot see individual containers; use `docker stats` there.)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_VERSION:-v0.49.1}
+    privileged: true
+    command:
+      - --housekeeping_interval=5s
+      - --docker_only=true
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.service
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  # Connects to Postgres directly (not via toxiproxy) so DB faults do not blind it.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:${PGEXP_VERSION:-v0.16.0}
+    environment:
+      DATA_SOURCE_NAME: "postgresql://temporal:temporal@postgres:5432/postgres?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  promdata:

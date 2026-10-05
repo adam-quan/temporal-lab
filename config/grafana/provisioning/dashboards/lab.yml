@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: temporal-lab
+    folder: Temporal Lab
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

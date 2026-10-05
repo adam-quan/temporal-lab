@@ -1,0 +1,4 @@
+results
+.git
+**/__pycache__
+*.jsonl

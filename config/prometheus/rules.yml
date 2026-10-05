@@ -1,0 +1,51 @@
+# Phase 5: alert on LATENCY (queueing), not only on errors. View at http://localhost:9090/alerts
+# Thresholds are deliberately tight for a lab; a real SLO would be looser.
+groups:
+  - name: temporal-worker-slo
+    rules:
+      - alert: WorkflowTaskScheduleToStartHigh
+        expr: histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[1m]))) > 500
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "p99 workflow-task schedule-to-start {{ $value | printf \"%.0f\" }} ms on {{ $labels.task_queue }}"
+          hint: "workflow workers saturated: slots, pollers, CPU, or sticky-cache misses"
+      - alert: ActivityScheduleToStartHigh
+        expr: histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[1m]))) > 1000
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "p99 activity schedule-to-start {{ $value | printf \"%.0f\" }} ms on {{ $labels.task_queue }}"
+          hint: "activity workers saturated or absent: scale them, check slots_available"
+      - alert: WorkerSlotsExhausted
+        expr: min by (worker_type) (temporal_worker_task_slots_available) == 0
+        for: 30s
+        labels: {severity: warn}
+        annotations:
+          summary: "a {{ $labels.worker_type }} has 0 free task slots"
+      - alert: WorkflowTaskFailures
+        expr: sum(rate(temporal_workflow_task_execution_failed[1m])) > 0.1
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "workflow tasks are failing: non-determinism, workflow bug, or deadlock detector"
+  - name: temporal-server-slo
+    rules:
+      - alert: PersistenceLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(persistence_latency_bucket[1m]))) > 0.25
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "p99 persistence latency {{ $value | printf \"%.3f\" }} s"
+      - alert: ServerResourceExhausted
+        expr: sum(rate(service_error_with_type{error_type=~".*ResourceExhausted.*"}[1m])) > 0
+        for: 30s
+        labels: {severity: warn}
+        annotations:
+          summary: "server is rate limiting (RESOURCE_EXHAUSTED)"
+      - alert: ServiceReplicaDown
+        expr: count by (role) (up{job="temporal"} == 0) > 0
+        for: 15s
+        labels: {severity: page}
+        annotations:
+          summary: "a {{ $labels.role }} replica is not being scraped"

@@ -1,0 +1,4 @@
+temporalio>=1.9,<2
+# Only needed by `lab.probe shard` / `shard-dist` (FarmHash Fingerprint32, the hash
+# Temporal uses to map workflow IDs to history shards). Optional.
+pyfarmhash>=0.3

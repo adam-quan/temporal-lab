@@ -1,0 +1,1996 @@
+{
+ "id": null,
+ "uid": "temporal-lab",
+ "title": "Temporal Lab",
+ "tags": [
+  "temporal",
+  "lab"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": true,
+ "refresh": "5s",
+ "time": {
+  "from": "now-15m",
+  "to": "now"
+ },
+ "graphTooltip": 1,
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": [
+   {
+    "name": "chaos events",
+    "enable": true,
+    "iconColor": "red",
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "target": {
+     "type": "tags",
+     "tags": [
+      "chaos"
+     ],
+     "limit": 200,
+     "matchAny": false
+    }
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "row",
+   "title": "1. Load generator (client view)",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "panels": []
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "Client requests/s by operation",
+   "description": "What the load generator actually sent. Compare with the target rate in the loadgen output.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (operation) (rate(temporal_request{job=\"loadgen\"}[$__rate_interval]))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "type": "timeseries",
+   "title": "Client request FAILURES/s by status",
+   "description": "RESOURCE_EXHAUSTED here = the server is rate limiting. The SDK retries these transparently, so they show up as latency first.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (operation, status_code) (rate(temporal_request_failure{job=\"loadgen\"}[$__rate_interval]))",
+     "legendFormat": "{{operation}} {{status_code}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "timeseries",
+   "title": "Client StartWorkflow latency p50 / p99 (ms)",
+   "description": "Includes SDK-internal retries. The loadgen table reports the same thing per step.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(temporal_request_latency_bucket{job=\"loadgen\",operation=~\"StartWorkflowExecution|SignalWithStartWorkflowExecution\"}[$__rate_interval])))",
+     "legendFormat": "p50",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_request_latency_bucket{job=\"loadgen\",operation=~\"StartWorkflowExecution|SignalWithStartWorkflowExecution\"}[$__rate_interval])))",
+     "legendFormat": "p99",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "row",
+   "title": "2. SDK workers: the queueing signal (schedule-to-start) and worker health",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 9
+   },
+   "panels": []
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "Workflow task schedule\u2192start p50 / p99 (ms)",
+   "description": "Should be ~0. Rising = not enough workflow-task capacity (slots, pollers, CPU, cache misses).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 10
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "legendFormat": "p50 {{task_queue}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "legendFormat": "p99 {{task_queue}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Activity schedule\u2192start p50 / p99 (ms)",
+   "description": "The #1 autoscaling signal. Rising while server latency is flat = add/unblock ACTIVITY workers.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 10
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "legendFormat": "p50 {{task_queue}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "legendFormat": "p99 {{task_queue}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Task slots available (sum / min over workers)",
+   "description": "Hits 0 = saturated (min) . Not reported with the resource-based tuner: use slots_used.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 10
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (worker_type) (temporal_worker_task_slots_available)",
+     "legendFormat": "sum {{worker_type}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "min by (worker_type) (temporal_worker_task_slots_available)",
+     "legendFormat": "min {{worker_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Task slots used",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (worker_type) (temporal_worker_task_slots_used)",
+     "legendFormat": "{{worker_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "type": "timeseries",
+   "title": "Sticky cache hit / miss per second + size",
+   "description": "Misses force a full history replay. Shrink MAX_CACHED_WORKFLOWS and watch this and the replay panel.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_sticky_cache_hit[$__rate_interval]))",
+     "legendFormat": "hit/s",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_sticky_cache_miss[$__rate_interval]))",
+     "legendFormat": "miss/s",
+     "editorMode": "code"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(temporal_sticky_cache_size)",
+     "legendFormat": "cached workflows",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Workflow task execution vs REPLAY latency p99 (ms)",
+   "description": "Replay latency climbing = cache misses on long histories.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 18
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_execution_latency_bucket[$__rate_interval])))",
+     "legendFormat": "execution p99",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket[$__rate_interval])))",
+     "legendFormat": "replay p99",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Activity execution latency p99 (ms)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 26
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, activity_type) (rate(temporal_activity_execution_latency_bucket[$__rate_interval])))",
+     "legendFormat": "{{activity_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 13,
+   "type": "timeseries",
+   "title": "Task failures/s",
+   "description": "wft failures = workflow-code bugs / non-determinism / deadlock detector. Activity failures are normal retries.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 26
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed[$__rate_interval]))",
+     "legendFormat": "wft failed {{failure_reason}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_activity_execution_failed[$__rate_interval]))",
+     "legendFormat": "activity attempts failed",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Pollers and empty polls",
+   "description": "Lots of empty polls = idle/over-provisioned pollers. Zero pollers = nothing will ever be dequeued.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 26
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (poller_type) (temporal_num_pollers)",
+     "legendFormat": "pollers {{poller_type}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_workflow_task_queue_poll_empty[$__rate_interval]))",
+     "legendFormat": "wf empty polls/s",
+     "editorMode": "code"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_workflow_task_queue_poll_succeed[$__rate_interval]))",
+     "legendFormat": "wf successful polls/s",
+     "editorMode": "code"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(temporal_activity_poll_no_task[$__rate_interval]))",
+     "legendFormat": "activity empty polls/s",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "type": "timeseries",
+   "title": "Workflows completed / failed per second (worker view)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 34
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (workflow_type) (rate(temporal_workflow_completed[$__rate_interval]))",
+     "legendFormat": "completed {{workflow_type}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (workflow_type) (rate(temporal_workflow_failed[$__rate_interval]))",
+     "legendFormat": "failed {{workflow_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 16,
+   "type": "timeseries",
+   "title": "Worker container CPU cores (by compose service)",
+   "description": "Python workers are usually CPU/GIL-bound before anything else. Pair with slots_available.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 34
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=~\"sdk-worker.*|loadgen\"}[$__rate_interval]))",
+     "legendFormat": "{{container_label_com_docker_compose_service}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 17,
+   "type": "row",
+   "title": "3. Temporal server",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 42
+   },
+   "panels": []
+  },
+  {
+   "id": 18,
+   "type": "timeseries",
+   "title": "Cluster membership: live replicas per service",
+   "description": "Watch this drop and recover during kill/restart experiments.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 43
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "count by (role) (up{job=\"temporal\"} == 1)",
+     "legendFormat": "{{role}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "Frontend requests/s by operation",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 43
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (operation) (rate(service_requests{service_name=\"frontend\"}[$__rate_interval]))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "Frontend p99 latency by operation (s)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 43
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(service_latency_bucket{service_name=\"frontend\"}[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 21,
+   "type": "timeseries",
+   "title": "History p99 latency by operation (s)",
+   "description": "History owns the shards and does the DB writes. This is where a slow DB shows up first.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 51
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(service_latency_bucket{service_name=\"history\"}[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "type": "timeseries",
+   "title": "Matching p99 latency by operation (s)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 51
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(service_latency_bucket{service_name=\"matching\"}[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 23,
+   "type": "timeseries",
+   "title": "Server errors/s by service and type",
+   "description": "ResourceExhausted, ShardOwnershipLost, ... are the interesting ones.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 51
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (service_name, error_type) (rate(service_error_with_type[$__rate_interval]))",
+     "legendFormat": "{{service_name}} {{error_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 24,
+   "type": "timeseries",
+   "title": "Persistence p99 latency by operation (s)",
+   "description": "Every workflow state transition costs at least one of these. First derivative of 'the DB is the bottleneck'.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 59
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(persistence_latency_bucket[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 25,
+   "type": "timeseries",
+   "title": "Persistence requests/s by service",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 59
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (service_name) (rate(persistence_requests[$__rate_interval]))",
+     "legendFormat": "{{service_name}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 26,
+   "type": "timeseries",
+   "title": "Persistence errors/s",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 59
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (service_name, error_type) (rate(persistence_error_with_type[$__rate_interval]))",
+     "legendFormat": "{{service_name}} {{error_type}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 27,
+   "type": "timeseries",
+   "title": "History task queue latency p99 (s)  [task_latency_queue]",
+   "description": "Time internal history tasks (transfer/timer) wait before processing. Timer storms show up here.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 67
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(task_latency_queue_bucket[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 28,
+   "type": "timeseries",
+   "title": "Lock wait p99 (s)  [lock_latency, if present]",
+   "description": "Per-workflow / per-shard lock contention (signal firehose, hot key).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 67
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le, operation) (rate(lock_latency_bucket[$__rate_interval])))",
+     "legendFormat": "{{operation}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 29,
+   "type": "timeseries",
+   "title": "Matching poll_success/s (sync vs backlog)",
+   "description": "sync match rate falling = tasks going through the DB-backed backlog path.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 67
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(poll_success[$__rate_interval]))",
+     "legendFormat": "poll_success",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(poll_success_sync[$__rate_interval]))",
+     "legendFormat": "poll_success_sync (matched without touching DB)",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 30,
+   "type": "timeseries",
+   "title": "Inter-service client errors/s",
+   "description": "Indicates connectivity problems between server roles (kill/pause experiments).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 75
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (service_name, service_role) (rate(client_errors[$__rate_interval]))",
+     "legendFormat": "{{service_name}}\u2192{{service_role}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 31,
+   "type": "timeseries",
+   "title": "Go goroutines by service",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 75
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (role) (go_goroutines{job=\"temporal\"})",
+     "legendFormat": "{{role}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 32,
+   "type": "row",
+   "title": "4. Infrastructure",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 83
+   },
+   "panels": []
+  },
+  {
+   "id": 33,
+   "type": "timeseries",
+   "title": "Container CPU cores by compose service",
+   "description": "Which container saturates first?",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 84
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service!=\"\"}[$__rate_interval]))",
+     "legendFormat": "{{container_label_com_docker_compose_service}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 34,
+   "type": "timeseries",
+   "title": "Container memory (working set)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 84
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{container_label_com_docker_compose_service!=\"\"})",
+     "legendFormat": "{{container_label_com_docker_compose_service}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 35,
+   "type": "timeseries",
+   "title": "Postgres connections by database",
+   "description": "Each Temporal service holds a pool (SQL_MAX_CONNS). Scaling history hosts multiplies this.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 84
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (datname) (pg_stat_database_numbackends{datname=~\"temporal.*\"})",
+     "legendFormat": "{{datname}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 36,
+   "type": "timeseries",
+   "title": "Postgres transactions/s (commit + rollback)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{datname=~\"temporal.*\"}[$__rate_interval]))",
+     "legendFormat": "commit {{datname}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{datname=~\"temporal.*\"}[$__rate_interval]))",
+     "legendFormat": "rollback {{datname}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 37,
+   "type": "timeseries",
+   "title": "Postgres rows inserted / updated per second",
+   "description": "Write amplification: compare with client starts/s.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(pg_stat_database_tup_inserted{datname=~\"temporal.*\"}[$__rate_interval]))",
+     "legendFormat": "inserted/s",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(pg_stat_database_tup_updated{datname=~\"temporal.*\"}[$__rate_interval]))",
+     "legendFormat": "updated/s",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 38,
+   "type": "timeseries",
+   "title": "Prometheus scrape targets up",
+   "description": "If a panel is empty, check that its job is up.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 92
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (job) (up)",
+     "legendFormat": "{{job}}",
+     "editorMode": "code"
+    }
+   ]
+  }
+ ]
+}
