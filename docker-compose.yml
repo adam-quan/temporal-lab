@@ -246,6 +246,8 @@ services:
       METRICS_PORT_BASE: "9001"
     volumes:
       - ./results:/app/results
+      # read-write so `make historytasks` can apply (and then remove) its own dynamic-config block
+      - ./config/dynamicconfig:/app/dynamicconfig
 
   # ============================== Observability ================================
   prometheus:

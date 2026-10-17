@@ -18,7 +18,7 @@ TOXI_PORT := $(call envport,TOXIPROXY_HOST_PORT,8474)
 
 .DEFAULT_GOAL := help
 .PHONY: help up down nuke reset ps logs scale workers split unsplit deploy-variant smoke load probe history \
-	    count shard cli cli-tdbg tq tq-watch metric-names dashboard cleanup urls chaos
+	    count shard hotshard workerperf historytasks persistenceqps cli cli-tdbg tq tq-watch metric-names dashboard cleanup urls chaos
 
 help: ## this list
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-16s\033[0m %s\n",$$1,$$2}'
@@ -93,6 +93,15 @@ shard: ## which history shard owns an ID:  make shard WF=<workflow-id> SHARDS=51
 
 hotshard: ## hot-shard test:  make hotshard ARGS="run --kind restart"   (detector | shard <id>; see experiments/hot-shard.md)
 	$(DC) run --rm --entrypoint python loadgen -m lab.hotshard $(ARGS)
+
+workerperf: ## worker-performance test:  make workerperf ARGS="run --scenario slots [--fix]"   (list; see experiments/worker-performance.md)
+	$(DC) run --rm --name loadgen --entrypoint python loadgen -m lab.workerperf $(ARGS)
+
+historytasks: ## history task processing test:  make historytasks ARGS="run --scenario loop"   (calibrate | indicator | reset; see experiments/history-task-processing.md)
+	$(DC) run --rm --entrypoint python loadgen -m lab.historytasks $(ARGS)
+
+persistenceqps: ## history persistence QPS test:  make persistenceqps ARGS="run --scenario throttle"   (list | reset; see experiments/history-persistence-qps.md)
+	$(DC) run --rm --entrypoint python loadgen -m lab.persistenceqps $(ARGS)
 
 cli: ## temporal CLI:  make cli ARGS="workflow list --limit 5"
 	$(DC) exec admin-tools temporal $(ARGS)

@@ -61,8 +61,8 @@ docker-compose.yml   the whole lab              .env                 versions + 
 Makefile             ergonomic commands         chaos/chaos.sh       fault injection
 config/temporal/     server config template     config/dynamicconfig hot-reloaded server tunables (5 s poll)
 config/prometheus/   scrape config + SLO alerts config/grafana/      provisioning + generated dashboard
-lab/                 Python: models, activities, workflows, worker, load, probe, hotshard (hot-shard test)
-tools/               gen_dashboard.py, curve.py experiments/         EXPERIMENTS.md, atlas.md, hot-shard.md
+lab/                 Python: models, activities, workflows, worker, load, probe, hotshard / workerperf / historytasks / persistenceqps (tests)
+tools/               gen_dashboard.py, curve.py experiments/         EXPERIMENTS.md, atlas.md, hot-shard.md, worker-performance.md, history-task-processing.md, history-persistence-qps.md
 results/             ramp output (*.jsonl) and chaos.log
 ```
 

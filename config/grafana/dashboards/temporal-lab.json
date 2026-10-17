@@ -854,8 +854,8 @@
   {
    "id": 16,
    "type": "timeseries",
-   "title": "Worker container CPU cores (by compose service)",
-   "description": "Python workers are usually CPU/GIL-bound before anything else. Pair with slots_available.",
+   "title": "Worker process CPU (cores)",
+   "description": "Exported by lab/worker.py itself (cAdvisor cannot see containers on Docker Desktop). A Python worker is GIL-bound near 1.0 for Python work: step 1 of the schedule-to-start diagnosis.",
    "datasource": {
     "type": "prometheus",
     "uid": "prom"
@@ -874,7 +874,8 @@
       "fillOpacity": 4,
       "showPoints": "never",
       "spanNulls": true
-     }
+     },
+     "min": 0
     },
     "overrides": []
    },
@@ -896,14 +897,170 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service=~\"sdk-worker.*|loadgen\"}[$__rate_interval]))",
-     "legendFormat": "{{container_label_com_docker_compose_service}}",
+     "expr": "worker_process_cpu_cores",
+     "legendFormat": "{{job}} {{instance}}",
      "editorMode": "code"
     }
    ]
   },
   {
    "id": 17,
+   "type": "timeseries",
+   "title": "Worker process memory (RSS)",
+   "description": "Grows with the sticky cache (MAX_CACHED_WORKFLOWS) and with in-flight activity payloads.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 34
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "worker_process_rss_bytes",
+     "legendFormat": "{{job}} {{instance}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "type": "timeseries",
+   "title": "Worker event-loop busy (utilization)",
+   "description": "Fraction of time the asyncio loop was not idle (lab/worker.py). Near 100% while worker CPU is low = the loop is blocked on synchronous I/O inside async code.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 42
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "worker_event_loop_busy_ratio",
+     "legendFormat": "{{job}} {{instance}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "type": "timeseries",
+   "title": "Worker event-loop lag (ms)",
+   "description": "Worst asyncio lag per 2 s (lab/worker.py probe). Healthy is ~0-15 ms. Hundreds of ms = something blocks the event loop: a blocking call or CPU work inside an `async def` activity.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 42
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "worker_event_loop_lag_ms",
+     "legendFormat": "{{job}} {{instance}}",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 20,
    "type": "row",
    "title": "3. Temporal server",
    "collapsed": false,
@@ -911,12 +1068,12 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 42
+    "y": 50
    },
    "panels": []
   },
   {
-   "id": 18,
+   "id": 21,
    "type": "timeseries",
    "title": "Cluster membership: live replicas per service",
    "description": "Watch this drop and recover during kill/restart experiments.",
@@ -928,7 +1085,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 43
+    "y": 51
    },
    "fieldConfig": {
     "defaults": {
@@ -968,7 +1125,7 @@
    ]
   },
   {
-   "id": 19,
+   "id": 22,
    "type": "timeseries",
    "title": "Frontend requests/s by operation",
    "description": "",
@@ -980,7 +1137,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 43
+    "y": 51
    },
    "fieldConfig": {
     "defaults": {
@@ -1023,7 +1180,7 @@
    ]
   },
   {
-   "id": 20,
+   "id": 23,
    "type": "timeseries",
    "title": "Frontend p99 latency by operation (s)",
    "description": "",
@@ -1035,7 +1192,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 43
+    "y": 51
    },
    "fieldConfig": {
     "defaults": {
@@ -1074,7 +1231,7 @@
    ]
   },
   {
-   "id": 21,
+   "id": 24,
    "type": "timeseries",
    "title": "History p99 latency by operation (s)",
    "description": "History owns the shards and does the DB writes. This is where a slow DB shows up first.",
@@ -1086,7 +1243,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 51
+    "y": 59
    },
    "fieldConfig": {
     "defaults": {
@@ -1125,7 +1282,7 @@
    ]
   },
   {
-   "id": 22,
+   "id": 25,
    "type": "timeseries",
    "title": "Matching p99 latency by operation (s)",
    "description": "",
@@ -1137,7 +1294,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 51
+    "y": 59
    },
    "fieldConfig": {
     "defaults": {
@@ -1176,7 +1333,7 @@
    ]
   },
   {
-   "id": 23,
+   "id": 26,
    "type": "timeseries",
    "title": "Server errors/s by service and type",
    "description": "ResourceExhausted, ShardOwnershipLost, ... are the interesting ones.",
@@ -1188,7 +1345,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 51
+    "y": 59
    },
    "fieldConfig": {
     "defaults": {
@@ -1227,7 +1384,7 @@
    ]
   },
   {
-   "id": 24,
+   "id": 27,
    "type": "timeseries",
    "title": "Persistence p99 latency by operation (s)",
    "description": "Every workflow state transition costs at least one of these. First derivative of 'the DB is the bottleneck'.",
@@ -1239,7 +1396,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 59
+    "y": 67
    },
    "fieldConfig": {
     "defaults": {
@@ -1278,7 +1435,7 @@
    ]
   },
   {
-   "id": 25,
+   "id": 28,
    "type": "timeseries",
    "title": "Persistence requests/s by service",
    "description": "",
@@ -1290,7 +1447,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 59
+    "y": 67
    },
    "fieldConfig": {
     "defaults": {
@@ -1333,7 +1490,7 @@
    ]
   },
   {
-   "id": 26,
+   "id": 29,
    "type": "timeseries",
    "title": "Persistence errors/s",
    "description": "",
@@ -1345,7 +1502,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 59
+    "y": 67
    },
    "fieldConfig": {
     "defaults": {
@@ -1384,7 +1541,7 @@
    ]
   },
   {
-   "id": 27,
+   "id": 30,
    "type": "timeseries",
    "title": "History task queue latency p99 (s)  [task_latency_queue]",
    "description": "Time internal history tasks (transfer/timer) wait before processing. Timer storms show up here.",
@@ -1396,7 +1553,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 67
+    "y": 75
    },
    "fieldConfig": {
     "defaults": {
@@ -1435,7 +1592,7 @@
    ]
   },
   {
-   "id": 28,
+   "id": 31,
    "type": "timeseries",
    "title": "Lock wait p99 (s)  [lock_latency, if present]",
    "description": "Per-workflow / per-shard lock contention (signal firehose, hot key).",
@@ -1447,7 +1604,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 67
+    "y": 75
    },
    "fieldConfig": {
     "defaults": {
@@ -1486,7 +1643,7 @@
    ]
   },
   {
-   "id": 29,
+   "id": 32,
    "type": "timeseries",
    "title": "Matching poll_success/s (sync vs backlog)",
    "description": "sync match rate falling = tasks going through the DB-backed backlog path.",
@@ -1498,7 +1655,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 67
+    "y": 75
    },
    "fieldConfig": {
     "defaults": {
@@ -1547,7 +1704,7 @@
    ]
   },
   {
-   "id": 30,
+   "id": 33,
    "type": "timeseries",
    "title": "Inter-service client errors/s",
    "description": "Indicates connectivity problems between server roles (kill/pause experiments).",
@@ -1559,7 +1716,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 75
+    "y": 83
    },
    "fieldConfig": {
     "defaults": {
@@ -1598,7 +1755,7 @@
    ]
   },
   {
-   "id": 31,
+   "id": 34,
    "type": "timeseries",
    "title": "Go goroutines by service",
    "description": "",
@@ -1610,7 +1767,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 75
+    "y": 83
    },
    "fieldConfig": {
     "defaults": {
@@ -1649,7 +1806,7 @@
    ]
   },
   {
-   "id": 32,
+   "id": 35,
    "type": "row",
    "title": "4. Infrastructure",
    "collapsed": false,
@@ -1657,12 +1814,12 @@
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 83
+    "y": 91
    },
    "panels": []
   },
   {
-   "id": 33,
+   "id": 36,
    "type": "timeseries",
    "title": "Container CPU cores by compose service",
    "description": "Which container saturates first?",
@@ -1674,7 +1831,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 84
+    "y": 92
    },
    "fieldConfig": {
     "defaults": {
@@ -1717,7 +1874,7 @@
    ]
   },
   {
-   "id": 34,
+   "id": 37,
    "type": "timeseries",
    "title": "Container memory (working set)",
    "description": "",
@@ -1729,7 +1886,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 84
+    "y": 92
    },
    "fieldConfig": {
     "defaults": {
@@ -1768,7 +1925,7 @@
    ]
   },
   {
-   "id": 35,
+   "id": 38,
    "type": "timeseries",
    "title": "Postgres connections by database",
    "description": "Each Temporal service holds a pool (SQL_MAX_CONNS). Scaling history hosts multiplies this.",
@@ -1780,7 +1937,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 84
+    "y": 92
    },
    "fieldConfig": {
     "defaults": {
@@ -1819,7 +1976,7 @@
    ]
   },
   {
-   "id": 36,
+   "id": 39,
    "type": "timeseries",
    "title": "Postgres transactions/s (commit + rollback)",
    "description": "",
@@ -1831,7 +1988,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 92
+    "y": 100
    },
    "fieldConfig": {
     "defaults": {
@@ -1880,7 +2037,7 @@
    ]
   },
   {
-   "id": 37,
+   "id": 40,
    "type": "timeseries",
    "title": "Postgres rows inserted / updated per second",
    "description": "Write amplification: compare with client starts/s.",
@@ -1892,7 +2049,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 92
+    "y": 100
    },
    "fieldConfig": {
     "defaults": {
@@ -1941,7 +2098,7 @@
    ]
   },
   {
-   "id": 38,
+   "id": 41,
    "type": "timeseries",
    "title": "Prometheus scrape targets up",
    "description": "If a panel is empty, check that its job is up.",
@@ -1953,7 +2110,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 92
+    "y": 100
    },
    "fieldConfig": {
     "defaults": {

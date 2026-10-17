@@ -13,10 +13,13 @@ The `results/chaos.log` file gives you exact fault timestamps; the `results/*.js
 | 3A-2 | Workflow/activity pollers = 2 vs 50 vs autoscale |  |  |  |  |  |
 | 3A-3 | Sticky cache = 5 |  |  |  |  |  |
 | 3A-4 | CPU-bound workflow code (detector on / off) |  |  |  |  |  |
+| 3A-5 | Worker bottlenecks via `make workerperf` (slots, cpu, blocking, pollers, cache, ratelimit; experiments/worker-performance.md) |  |  |  |  |  |
 | 3B-1 | Task queue partitions 1 vs 4 vs 16 |  |  |  |  |  |
 | 3B-2 | DB throttled (CPU cap, +latency) |  |  |  |  |  |
 | 3B-3 | Hot key vs spread keys, more history hosts |  |  |  |  |  |
 | 3B-3b | Hot shard: restart / signal / CAN loops, colocated IDs (`make hotshard`, experiments/hot-shard.md) |  |  |  |  |  |
+| 3B-5 | History task processing: write-reject loop and task-scheduler limits (`make historytasks`, experiments/history-task-processing.md) |  |  |  |  |  |
+| 3B-6 | Rejected database calls: persistence QPS limits, their traps, outcome A/C (`make persistenceqps`, experiments/history-persistence-qps.md) |  |  |  |  |  |
 | 3B-4 | numHistoryShards 1 vs 4 vs 512 |  |  |  |  |  |
 | 3C-1 | Namespace RPS limit -> RESOURCE_EXHAUSTED |  |  |  |  |  |
 | 3C-2 | Per-shard / per-namespace ceilings |  |  |  |  |  |

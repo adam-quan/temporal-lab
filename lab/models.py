@@ -16,6 +16,7 @@ class WorkSpec:
 
     work_ms: int = 50              # simulated I/O wait (asyncio.sleep / time.sleep)
     cpu_ms: int = 0                # pure-Python busy loop (holds the GIL; in async activities it blocks the event loop!)
+    block_ms: int = 0              # blocking time.sleep (like requests.get); in work_async it freezes the event loop
     heartbeat_every_ms: int = 0    # 0 = never heartbeat
     payload_in: str = ""           # ballast carried in the activity input
     response_bytes: int = 0        # size of the string the activity returns

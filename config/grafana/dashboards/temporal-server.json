@@ -1405,6 +1405,50 @@
               "refId": "A"
             }
           ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Database calls the rate limiter turned away, broken down by NAMESPACE and by which limit refused them. The companion to Task Scheduler Throttling by Namespace (2407): that panel shows work the scheduler declined to dispatch, this one shows calls that were dispatched and then refused by a persistence limit. Use it to answer 'which namespace is being rejected' - the other rejection panels are either cluster-wide (2405) or filtered to the single selected namespace (2401), so neither answers that during an incident. The resource_exhausted_scope label says which limit refused the call: System is the per-pod limit, Namespace is the per-namespace or per-shard one - which tells you which setting to change. Namespace-scope rejections climbing on a cold cache after a history pod restart are how the write-reject loop forms; cross-check the Write-Reject Loop Indicator (2403). Empty is normal and healthy. Cluster-wide: ignores the $namespace variable by design.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 62
+          },
+          "id": 2416,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (namespace, resource_exhausted_scope) (rate(persistence_errors_resource_exhausted{service_name=\"history\"}[$__rate_interval]))",
+              "legendFormat": "{{namespace}} \u2014 {{resource_exhausted_scope}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Rejected Database Calls by Namespace",
+          "type": "timeseries"
         }
       ]
     },
@@ -2869,11 +2913,11 @@
                   },
                   {
                     "color": "orange",
-                    "value": 500000
+                    "value": 10000
                   },
                   {
                     "color": "red",
-                    "value": 3000000
+                    "value": 50000
                   }
                 ]
               }
@@ -2888,7 +2932,7 @@
           },
           "id": 2109,
           "title": "Immediate Queue Lag per Pod",
-          "description": "Task ID delta between the high watermark and the minimum pending immediate task, per history pod and task category. Emitted every 5 minutes per shard. A line rising monotonically across multiple ticks without recovering indicates a stuck shard on that pod. Orange > 500K tasks, red > 3M tasks (matches the server internal log threshold). No shard_id tag exists \u2014 use the instance label to identify the pod, then tdbg history-host describe to enumerate its shards.",
+          "description": "Task ID delta between the high watermark and the minimum pending immediate task, per history pod and task category. Emitted every 5 minutes per shard. A line rising monotonically across multiple ticks without recovering indicates a stuck shard on that pod. SATURATES AT 100,000 - this is a Dimensionless histogram whose top bucket is 100,000, so a line sitting there means at least that many task ids behind, possibly far more, and the number stops growing while the backlog does not. Thresholds are orange 10,000 and red 50,000, both chosen to fire well below that ceiling; healthy is in the single digits. Do NOT set them from the server internal log threshold of 3,000,000 - that applies to the raw value before bucketing and is unreachable on this panel. This metric measures a task-id distance, not a count of rows or pending tasks: there is no metric for either. No shard_id tag exists - use the instance label to identify the pod, then tdbg history-host describe to enumerate its shards.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -2934,7 +2978,7 @@
                   },
                   {
                     "color": "red",
-                    "value": 1800000
+                    "value": 900000
                   }
                 ]
               }
@@ -2949,7 +2993,7 @@
           },
           "id": 2110,
           "title": "Scheduled Queue Lag per Pod",
-          "description": "Time delta between the high watermark fire time and the oldest pending scheduled task fire time, per history pod and task category. Emitted every 5 minutes per shard. Orange > 10 min (600,000 ms), red > 30 min (1,800,000 ms \u2014 matches the server internal log threshold).",
+          "description": "Time delta between the high watermark fire time and the oldest pending scheduled task fire time, per history pod and task category. Emitted every 5 minutes per shard. Two limits bound what this panel can tell you. It has a FLOOR equal to the queue poll interval - the reader always reads ahead of now, so an idle cluster reports roughly history.timerProcessorMaxPollInterval (default 5 min); measured 494.6s p99 on an empty cluster. And it SATURATES at 1000s (16.7 min), the top bucket of a Seconds histogram, so a line sitting there means at least that far behind, possibly far more. Between floor and ceiling there is one bucket boundary at 500s, so this establishes THAT a queue is behind and never how far. Thresholds are orange 10 min (600,000 ms) and red 15 min (900,000 ms), the latter aligned with alert 38. Do NOT set them from the server internal log threshold of 30 minutes - that applies to the raw value before bucketing and is unreachable here.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -3462,7 +3506,7 @@
           },
           "id": 2408,
           "title": "Task Load Latency by Task Type",
-          "description": "How long tasks waited before being loaded out of the database, by task type. EACH SERIES NAME STARTS WITH ITS QUEUE: TransferActive*/TransferStandby*, TimerActive*/TimerStandby*, VisibilityTask*, OutboundActive.*/OutboundStandby.*, ArchivalTask*. READ IT DIFFERENTLY FOR THE TWO KINDS OF QUEUE. For immediate queues (transfer, visibility, outbound) it is the time from the task being created to being loaded. For scheduled queues (timer, archival) it is how LATE the load was relative to the task's fire time, floored at zero -- a task loaded early by the read-ahead window records 0, and the timer's own duration is never included. So a healthy timer queue reads near zero here, and a rising value means timers are being loaded late. Note the metric's own description in the server source says 'from task generation to loading', which is accurate only for immediate queues. Use this panel to tell whether a poll rate cap (history.<queue>ProcessorMaxPollHostRPS) has been set too low: rising load latency with no database rejections means loading, not the database, is the constraint.",
+          "description": "How long tasks waited before being loaded out of the database, by task type. EACH SERIES NAME STARTS WITH ITS QUEUE: TransferActive*/TransferStandby*, TimerActive*/TimerStandby*, VisibilityTask*, OutboundActive.*/OutboundStandby.*, ArchivalTask*. READ IT DIFFERENTLY FOR THE TWO KINDS OF QUEUE. For immediate queues (transfer, visibility, outbound) it is the time from the task being created to being loaded. For scheduled queues (timer, archival) it is how LATE the load was relative to the task's fire time, floored at zero -- a task loaded early by the read-ahead window records 0, and the timer's own duration is never included. So a healthy timer queue reads near zero here, and a rising value means timers are being loaded late. Note the metric's own description in the server source says 'from task generation to loading', which is accurate only for immediate queues. TWO USES. First, to tell whether a poll rate cap (history.<queue>ProcessorMaxPollHostRPS) has been set too low: rising load latency with no database rejections means loading, not the database, is the constraint. Second, and the reason to reach for it during a backlog: read at p95 this is the best available indicator of whether a TIMER backlog is growing or shrinking, because a timer loaded after its fire time reports exactly how overdue it is. There is no backlog-age metric for scheduled queues and nothing anywhere counts task rows, so this is the closest substitute. Two limits on that use: it is a latency and not a size, so ten overdue tasks and ten million read the same; and it is only recorded when a task is LOADED, so a queue that has stopped loading goes quiet rather than high - pair it with Task Row Cleanup Attempts by Category.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -3539,6 +3583,94 @@
               "refId": "A"
             }
           ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Age of the oldest task at or above the last checkpointed position, per immediate task category - the time-based companion to Immediate Queue Lag per Pod, which reports the same backlog as a task-id distance. Use this to answer 'is the backlog growing or shrinking', which no other panel on this dashboard answers directly. IMMEDIATE CATEGORIES ONLY: transfer, visibility and outbound. There is no scheduled-queue equivalent, so for TIMER and ARCHIVAL backlogs use Task Load Latency by Task Type at p95 instead - a timer loaded after its fire time reports exactly how overdue it is, which trends the same thing. It is an AGE, not a size: ten tasks an hour late and ten million an hour late read identically, and no metric anywhere counts task rows or pending tasks. Three reading notes. It shares the checkpointed position, so a task completed since the last checkpoint still counts until the next one, and the age reported is that task's own age rather than a bound on the whole backlog. It is NOT emitted when a read is shed or fails, so absence does not mean no backlog - cross-check Task Row Cleanup Attempts by Category. And it is emitted once per shard every ~5 minutes, which is why the rate window is a fixed 11m: a shorter window often spans no observation and returns NaN. NaN on an idle cluster is correct, not broken.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 2
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 60
+          },
+          "id": 2417,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile($p, sum by (task_category, le) (rate(shardinfo_immediate_queue_backlog_age_bucket{service_name=\"history\"}[11m])))",
+              "legendFormat": "{{task_category}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Immediate Queue Backlog Age by Category",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Tasks that ran and then had their database call refused by a persistence limit (task_errors_throttled), broken down by task type and namespace. The task-side companion to Rejected Database Calls by Namespace: that panel counts the refused database call and says which limit refused it, this one says which KIND of task was refused and for which namespace. Use it when a task table is growing and you need to know whether the refusals are hitting timer, transfer, visibility or archival work - task_type carries the category as a prefix, for example TimerActiveTaskDeleteHistoryEvent. A refusal is NOT a failure: it is excluded from task_errors, it never advances the attempt counter that sends a task to the DLQ, and nothing is logged - so this counter and task_scheduler_throttled are the only places a throttled task appears at all. ABOVE ZERO IS NOT ITSELF A FAULT: throttling is the intended behaviour once persistence limits are set, and a healthy cluster shows a steady non-zero rate. What matters is the shape - one namespace orders of magnitude above the others, sustained and flat rather than rising and falling with load, means that namespace's tasks are not getting through at all. That stalls task row cleanup for EVERY namespace sharing those shards, because the deletion watermark is the oldest unfinished task across the whole shard. Empty is normal on a cluster that is not reaching its persistence limits. CLUSTER-WIDE: ignores the $namespace variable by design, because comparing namespaces against each other is the point.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "lineWidth": 2
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 68
+          },
+          "id": 2418,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (task_type, namespace) (rate(task_errors_throttled{service_name=\"history\"}[$__rate_interval]))",
+              "legendFormat": "{{namespace}} / {{task_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Throttled Tasks by Task Type and Namespace",
+          "type": "timeseries"
         }
       ]
     },
@@ -3769,8 +3901,8 @@
           },
           "targets": [
             {
-              "expr": "histogram_quantile($p, sum by (operation, le) (rate(shardinfo_scheduled_queue_lag_bucket{task_category=\"timer\",service_name=\"history\"}[$__rate_interval])))",
-              "legendFormat": "{{operation}}",
+              "expr": "histogram_quantile($p, sum by (task_category, le) (rate(shardinfo_scheduled_queue_lag_bucket{task_category=\"timer\",service_name=\"history\"}[11m])))",
+              "legendFormat": "{{task_category}}",
               "refId": "A"
             }
           ]
@@ -6395,7 +6527,7 @@
           },
           "id": 2128,
           "title": "Visibility Tasks Dead-Lettered by Task Type",
-          "description": "Visibility tasks written to the history task dead letter queue, split by task type. Above zero means those tasks gave up retrying. On ELASTICSEARCH that does not necessarily mean the records are missing: the bulk processor holds documents in memory, so a write that timed out may still be flushed and indexed once Elasticsearch recovers, after the task has already been dead-lettered. Verified on a test cluster - twelve dead-lettered tasks, all twelve records present in both stores afterwards. Check the store for the records before replaying. On SQL there is no such buffer, so a dead-lettered task there does mean the write never landed. The task type matters: a dropped Start or Upsert is rebuilt by the workflow's next visibility write, but a dropped CloseExecution is the last task that workflow ever emits and nothing rebuilds it, and a dropped DeleteExecution leaves a record that outlives its workflow. Recover with tdbg dlq read / merge --dlq-type visibility. The Dead-Lettered Tasks panels in the History Task DLQ row blend visibility with retention and workflow-task-timeout operations; this panel is visibility only. Cluster-wide - ignores $namespace. Applies to both SQL and Elasticsearch visibility stores.",
+          "description": "Visibility tasks written to the history task dead letter queue, split by task type.Reads task_terminal_failures, not dlq_writes: dlq_writes only carries the operation label from server v1.32.0, so an operation-filtered query on it returns nothing on older servers. task_terminal_failures carries operation on every version. It counts a task being marked terminally failed, which is the same moment. Turning history.TaskDLQEnabled off does not leave this panel accurate: the two failure paths then diverge and neither reaches it. A task failing with a corrupt or otherwise non-retryable error is dropped and marked complete - task_errors_corruption counts it, this panel does not. A task failing with unexpected but retryable errors, the 70-attempt path this panel is mostly about, is never dead-lettered at all and retries with no limit - neither metric counts it. So with the DLQ off, zero here does not mean nothing is being abandoned. Above zero means those tasks gave up retrying. On ELASTICSEARCH that does not necessarily mean the records are missing: the bulk processor holds documents in memory, so a write that timed out may still be flushed and indexed once Elasticsearch recovers, after the task has already been dead-lettered. Verified on a test cluster - twelve dead-lettered tasks, all twelve records present in both stores afterwards. Check the store for the records before replaying. On SQL there is no such buffer, so a dead-lettered task there does mean the write never landed. The task type matters: a dropped Start or Upsert is rebuilt by the workflow's next visibility write, but a dropped CloseExecution is the last task that workflow ever emits and nothing rebuilds it, and a dropped DeleteExecution leaves a record that outlives its workflow. Recover with tdbg dlq read / merge --dlq-type visibility. The Dead-Lettered Tasks panels in the History Task DLQ row blend visibility with retention and workflow-task-timeout operations; this panel is visibility only. Cluster-wide - ignores $namespace. Applies to both SQL and Elasticsearch visibility stores.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -6411,7 +6543,7 @@
           },
           "targets": [
             {
-              "expr": "sum(rate(dlq_writes{operation=~\"VisibilityTask.*\"}[$__rate_interval])) by (operation)",
+              "expr": "sum(rate(task_terminal_failures{operation=~\"VisibilityTask.*\"}[$__rate_interval])) by (operation)",
               "legendFormat": "{{operation}}",
               "refId": "A"
             }
@@ -7003,7 +7135,7 @@
           "type": "text",
           "options": {
             "mode": "markdown",
-            "content": "**Cluster Replication** tracks metrics related to multi-cluster replication from the **active cluster's perspective** \u2014 task generation, send throughput, and stream health.\n\n> **Standby-side monitoring:** Use the dedicated **Temporal Standby Dashboard** for receiver-side lag, DLQ depth, standby task retries, and failover readiness.\n\n> **DLQ panels** marked \u26a0\ufe0f Cassandra Only require Cassandra persistence and `history.TaskDLQEnabled = true` (default)."
+            "content": "**Cluster Replication** tracks metrics related to multi-cluster replication from the **active cluster's perspective** \u2014 task generation, send throughput, and stream health.\n\n> **Standby-side monitoring:** Use the dedicated **Temporal Standby Dashboard** for receiver-side lag, DLQ depth, standby task retries, and failover readiness.\n\n> **Replication DLQ:** the panel in this row covers the **replication task** DLQ, driven by `history.ReplicationTaskProcessorErrorRetryMaxAttempts` (default 80) \u2014 not the history task DLQ, and not Cassandra-only."
           }
         },
         {
@@ -7683,8 +7815,8 @@
             "y": 67
           },
           "id": 2005,
-          "title": "DLQ Writes and Failures \u26a0\ufe0f Cassandra Only",
-          "description": "Rate of tasks being written to DLQ and failures to write to DLQ. Only emitted for Cassandra persistence backends (history.TaskDLQEnabled must be true). DLQ enqueue failures are more severe than tasks landing in DLQ \u2014 failed tasks cannot even be preserved for inspection. Use tdbg dlq to inspect.",
+          "title": "Replication DLQ Non-Empty and Enqueue Failures",
+          "description": "The REPLICATION task DLQ - where a replication task is parked after it fails to apply history.ReplicationTaskProcessorErrorRetryMaxAttempts times (default 80). This is a different mechanism from the history task DLQ: history.TaskDLQEnabled does not govern it, and it is NOT Cassandra-only - the replication_tasks_dlq table and its insert/read/delete paths exist for PostgreSQL, MySQL and SQLite too. Two series, two windows, because the underlying metrics behave differently. Enqueue failures/s is a rate: a replication task failed all its retries AND could not even be written to the DLQ, so it is not preserved for inspection - more severe than a task merely landing in the DLQ, and the write is retried indefinitely so this climbs fast while it lasts. Non-empty observations (11m) counts periodic checks that found a non-empty replication DLQ: the check runs about every 5 minutes per shard per source cluster with full jitter, so gaps reach 5 minutes and a short window reads zero at random - 11m guarantees at least two checks. Any value above zero means something is sitting in the DLQ right now. It is an increase over the window, not a running total, so it falls back to zero once the DLQ drains. Inspect and replay with tdbg dlq.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -7700,13 +7832,13 @@
           },
           "targets": [
             {
-              "expr": "sum(rate(replication_dlq_failed{}[$__rate_interval]))",
-              "legendFormat": "DLQ enqueue failures/s",
+              "expr": "sum(rate(replication_dlq_enqueue_failed{}[$__rate_interval]))",
+              "legendFormat": "Enqueue failures/s",
               "refId": "A"
             },
             {
-              "expr": "max(replication_dlq_non_empty{})",
-              "legendFormat": "DLQ non-empty",
+              "expr": "sum(increase(replication_dlq_non_empty{}[11m]))",
+              "legendFormat": "Non-empty observations (11m)",
               "refId": "B"
             }
           ]
@@ -8009,7 +8141,7 @@
           },
           "id": 2202,
           "title": "Dead-Lettered Tasks \u2014 Execution-Stranding (page-worthy)",
-          "description": "History tasks sent to the DLQ that strand a running execution: activity retry/timeout timers and activity/workflow-task dispatch (Active + Standby). Any non-zero rate = permanently stranded work until DLQ redrive (tdbg dlq merge --dlq-type 2) or activity pause/unpause. This is the signal alert 80 pages on.",
+          "description": "History tasks sent to the DLQ that strand a running execution: activity retry/timeout timers and activity/workflow-task dispatch (Active + Standby). Any non-zero rate = permanently stranded work until DLQ redrive (tdbg dlq merge --dlq-type 2) or activity pause/unpause. This is the signal alert 80 pages on. Reads task_terminal_failures, not dlq_writes: dlq_writes only carries the operation label from server v1.32.0, so an operation-filtered query on it returns nothing on older servers. task_terminal_failures carries operation on every version. It counts a task being marked terminally failed, which is the same moment. Turning history.TaskDLQEnabled off does not leave this panel accurate: the two failure paths then diverge and neither reaches it. A task failing with a corrupt or otherwise non-retryable error is dropped and marked complete - task_errors_corruption counts it, this panel does not. A task failing with unexpected but retryable errors, the 70-attempt path this panel is mostly about, is never dead-lettered at all and retries with no limit - neither metric counts it. So with the DLQ off, zero here does not mean nothing is being abandoned.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -8025,7 +8157,7 @@
           },
           "targets": [
             {
-              "expr": "sum(rate(dlq_writes{operation=~\"Timer(Active|Standby)TaskActivity(RetryTimer|Timeout)|Transfer(Active|Standby)Task(Activity|WorkflowTask)\"}[$__rate_interval])) by (operation)",
+              "expr": "sum(rate(task_terminal_failures{operation=~\"Timer(Active|Standby)TaskActivity(RetryTimer|Timeout)|Transfer(Active|Standby)Task(Activity|WorkflowTask)\"}[$__rate_interval])) by (operation)",
               "legendFormat": "{{operation}}",
               "refId": "A"
             }
@@ -8065,7 +8197,7 @@
           },
           "id": 2203,
           "title": "Dead-Lettered Tasks \u2014 Informational (visibility / retention / WFT-timeout)",
-          "description": "DLQ writes that do NOT strand a running execution: visibility (search/list store), retention cleanup (DeleteHistoryEvent), and workflow-task timeout enforcement (covered by alerts 56/76). A trend of visibility/retention pipeline health \u2014 not page-worthy.",
+          "description": "DLQ writes that do NOT strand a running execution: visibility (search/list store), retention cleanup (DeleteHistoryEvent), and workflow-task timeout enforcement (covered by alerts 56/76). A trend of visibility/retention pipeline health \u2014 not page-worthy. Reads task_terminal_failures, not dlq_writes: dlq_writes only carries the operation label from server v1.32.0, so an operation-filtered query on it returns nothing on older servers. task_terminal_failures carries operation on every version. It counts a task being marked terminally failed, which is the same moment. Turning history.TaskDLQEnabled off does not leave this panel accurate: the two failure paths then diverge and neither reaches it. A task failing with a corrupt or otherwise non-retryable error is dropped and marked complete - task_errors_corruption counts it, this panel does not. A task failing with unexpected but retryable errors, the 70-attempt path this panel is mostly about, is never dead-lettered at all and retries with no limit - neither metric counts it. So with the DLQ off, zero here does not mean nothing is being abandoned.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -8081,7 +8213,7 @@
           },
           "targets": [
             {
-              "expr": "sum(rate(dlq_writes{operation=~\"VisibilityTask.*|Timer(Active|Standby)TaskDeleteHistoryEvent|Timer(Active|Standby)TaskWorkflowTaskTimeout\"}[$__rate_interval])) by (operation)",
+              "expr": "sum(rate(task_terminal_failures{operation=~\"VisibilityTask.*|Timer(Active|Standby)TaskDeleteHistoryEvent|Timer(Active|Standby)TaskWorkflowTaskTimeout\"}[$__rate_interval])) by (operation)",
               "legendFormat": "{{operation}}",
               "refId": "A"
             }
@@ -8198,6 +8330,134 @@
               "refId": "A"
             }
           ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "How many messages are sitting in each history task dead-letter queue right now, from dlq_message_count. Every other panel in this group is a RATE, and a rate reads zero once dead-lettering stops - so a queue that filled months ago and has been quiet since is invisible on all of them. This is the only panel that shows an existing backlog. Above zero means messages are sitting there waiting for an operator, not that something just happened; the work they represent has not been done and will not be retried until someone merges them. Break the number down with tdbg dlq list, then tdbg dlq read, before deciding between merge and purge. Two reading caveats: the gauge is refreshed only every 3 HOURS, so it is a staircase and a flat hour means nothing; and it is emitted only by the history host that owns shard 1, so the series gaps whenever that host restarts or the shard moves.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 37
+          },
+          "id": 2206,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "max(dlq_message_count) by (task_category)",
+              "legendFormat": "{{task_category}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Dead-Letter Queue Depth by Category",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Deepest attempt count reached by the execution-stranding task types - activity retry and timeout timers, and activity / workflow-task dispatch - read as the top bucket of the task_attempt histogram. The companion to Visibility Task Retry Depth, which shows the same thing for visibility tasks. A task records its attempt count on completion, and a task still retrying past 30 attempts also reports in flight, so a healthy cluster sits near 1 and is not expected to be empty - the signal is the line climbing. At history.TaskDLQUnexpectedErrorAttempts (70 by default, roughly 75 minutes with the retry backoff) the task is dead-lettered and its execution freezes. Read it together with Dead-Lettered Tasks - Execution-Stranding: a line that climbs toward the threshold and then RESETS without any dead-lettering means tasks are being discarded and reloaded before they can reach it, so they retry forever instead of being parked - the queue's position then stops advancing and its task table grows without bound. Thresholds mark 30 and 70, but the histogram buckets step 1/2/5/10/20/50/100, so readings are coarse and a threshold triggers on the bucket above. Cluster-wide - ignores the namespace variable.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "lineWidth": 2,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "orange",
+                    "value": 30
+                  },
+                  {
+                    "color": "red",
+                    "value": 70
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 37
+          },
+          "id": 2207,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(1.00, sum by (operation, le) (rate(task_attempt_bucket{operation=~\"Timer(Active|Standby)TaskActivity(RetryTimer|Timeout)|Transfer(Active|Standby)Task(Activity|WorkflowTask)\",service_name=\"history\"}[$__rate_interval])))",
+              "legendFormat": "{{operation}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Task Retry Depth \u2014 Stranding Types (approaching DLQ)",
+          "type": "timeseries"
         }
       ]
     },
@@ -8378,7 +8638,7 @@
           },
           "id": 2213,
           "title": "Signal 2 \u2014 History Task DLQ Writes & Write Failures",
-          "description": "Downstream escalation of an archival outage. 'archival DLQ writes' = archival tasks reaching the DLQ after 70 failed attempts (dlq_writes, ArchivalTaskArchiveExecution). 'DLQ write failures' = writes to the single-partition DLQ themselves failing (task_dlq_failures) \u2014 database distress. Alert 82 pages on task_dlq_failures.",
+          "description": "Downstream escalation of an archival outage. 'archival DLQ writes' = archival tasks reaching the DLQ after 70 failed attempts (task_terminal_failures, ArchivalTaskArchiveExecution - not dlq_writes, which only carries the operation label from server v1.32.0). 'DLQ write failures' = writes to the single-partition DLQ themselves failing (task_dlq_failures) \u2014 database distress. Alert 82 pages on task_dlq_failures.",
           "type": "timeseries",
           "options": {
             "legend": {
@@ -8394,7 +8654,7 @@
           },
           "targets": [
             {
-              "expr": "sum(rate(dlq_writes{operation=\"ArchivalTaskArchiveExecution\"}[$__rate_interval]))",
+              "expr": "sum(rate(task_terminal_failures{operation=\"ArchivalTaskArchiveExecution\"}[$__rate_interval]))",
               "legendFormat": "archival DLQ writes/s",
               "refId": "A"
             },
@@ -8619,6 +8879,272 @@
           ]
         }
       ]
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 2410,
+      "title": "History Task Cleanup",
+      "type": "row",
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 42
+          },
+          "id": 2415,
+          "title": "",
+          "type": "text",
+          "options": {
+            "mode": "markdown",
+            "content": "**History Task Cleanup** \u2014 whether the range deletes that free history task rows are succeeding. A task completing does **not** delete its row: rows are removed only by a periodic range delete of everything older than the oldest still-incomplete task, run once per shard per checkpoint (`history.<category>ProcessorUpdateAckInterval`, default 30s). That delete is a single unbounded statement under a **hard-coded 5-second timeout**, so on a queue whose position has been stuck it can be too large to finish, gets cancelled, and deletes nothing \u2014 and because the cursor only advances on success, each retry covers a **wider** range than the last. Once a category's latency here sits at 5s it will not recover on its own, and the task table grows without bound for **every namespace on the affected shards**. Read these four together: no attempts means every watermark is pinned; attempts with failures at ~5s is the delete itself failing."
+          }
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "How long the range delete that frees task rows takes, per task category (persistence_latency for the RangeComplete* operations). THE primary signal for this row. Healthy is single-digit milliseconds - measured 4.9ms for timer and 2.0ms on an idle reference cluster. A line climbing toward 5s is approaching the server's hard-coded queueIOTimeout. FIELD-MEASURED: a delete blocked past that timeout reports p99 around 9.9s, not exactly 5s - the Seconds histogram steps 5 -> 10, so a timed-out delete lands in the 5-10s band. Anything at or above the 5s threshold line means deletes are being cancelled and no rows are being freed at all. Because the deletion cursor only advances on success, a failing delete makes the next attempt cover a wider range, so this does not recover by itself - it has to be fixed by reducing the number of rows the statement matches. A category with no task traffic reports NaN and draws nothing, which is correct rather than broken. Fixed 5m window: deletes fire on a 30-second checkpoint, so shorter windows are noisy.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 2,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "orange",
+                    "value": 2.5
+                  },
+                  {
+                    "color": "red",
+                    "value": 5
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "id": 2411,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile($p, sum by (operation, le) (rate(persistence_latency_bucket{operation=~\"RangeComplete.*\",service_name=\"history\"}[5m])))",
+              "legendFormat": "{{operation}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Task Row Cleanup Latency by Category",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Range deletes that failed, per task category and error type. Should be flat zero. Anything sustained means row cleanup is broken for that category and the task table is growing. The usual cause is the delete exceeding the 5-second queueIOTimeout and being cancelled - cross-check against Task Row Cleanup Latency by Category, which will sit in the 5-10s band. FIELD-MEASURED: the error_type for a blocked or cancelled delete is serviceerror_Unavailable. Note what this does NOT create: a cancelled delete rolls back, so the rows stay live and no dead tuples are produced - database vacuum pressure comes from real cleanup, not from these failures. Empty is normal and healthy.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.001
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "id": 2412,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (operation, error_type) (rate(persistence_error_with_type{operation=~\"RangeComplete.*\",service_name=\"history\"}[5m]))",
+              "legendFormat": "{{operation}} - {{error_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Task Row Cleanup Failures by Category",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "Percentage of range deletes that completed, across all task categories. The single number for 'is row cleanup working'. 100 percent is healthy; 0 percent means every delete is failing and no task rows are being freed anywhere. The 'or vector(0)' in the query matters: without it this panel goes BLANK on recovery instead of showing 100, which reads as a broken panel. Cluster-wide by design - use Task Row Cleanup Failures by Category to see which queue is affected.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "lineWidth": 2,
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red"
+                  },
+                  {
+                    "color": "orange",
+                    "value": 95
+                  },
+                  {
+                    "color": "green",
+                    "value": 99.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 54
+          },
+          "id": 2413,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - (sum(rate(persistence_errors{operation=~\"RangeComplete.*\",service_name=\"history\"}[5m])) or vector(0)) / sum(rate(persistence_requests{operation=~\"RangeComplete.*\",service_name=\"history\"}[5m])))",
+              "legendFormat": "cleanup success %",
+              "refId": "A"
+            }
+          ],
+          "title": "Task Row Cleanup Success Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "description": "How often a range delete is even attempted, per task category. A delete is issued only when a queue's deletion watermark actually moved since the last checkpoint, so this is not a fixed cadence. Its value is telling two failure modes apart. ZERO attempts with no failures means no watermark is advancing anywhere - every queue position is pinned, nothing is being cleaned up, and nothing is complaining. Attempts above zero WITH failures means the watermark is moving but the delete itself cannot complete. Those are different problems with different fixes, and no other panel in this row separates them.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 54
+          },
+          "id": 2414,
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "min",
+                "max",
+                "mean",
+                "lastNotNull"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (operation) (rate(persistence_requests{operation=~\"RangeComplete.*\",service_name=\"history\"}[5m]))",
+              "legendFormat": "{{operation}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Task Row Cleanup Attempts by Category",
+          "type": "timeseries"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -8711,7 +9237,7 @@
   },
   "timepicker": {},
   "timezone": "utc",
-  "title": "Temporal Server Dashboard v2.18.0",
+  "title": "Temporal Server Dashboard v2.25.0",
   "uid": "temporal-overview-v1",
   "version": 11,
   "weekStart": ""

@@ -109,10 +109,17 @@ ts("Workflows completed / failed per second (worker view)", [
     (f"sum by (workflow_type) (rate(temporal_workflow_completed[{R}]))", "completed {{workflow_type}}"),
     (f"sum by (workflow_type) (rate(temporal_workflow_failed[{R}]))", "failed {{workflow_type}}"),
 ], "reqps")
-ts("Worker container CPU cores (by compose service)", [(
-    f'sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{{container_label_com_docker_compose_service=~"sdk-worker.*|loadgen"}}[{R}]))',
-    "{{container_label_com_docker_compose_service}}")], "short",
-   "Python workers are usually CPU/GIL-bound before anything else. Pair with slots_available.")
+ts("Worker process CPU (cores)", [("worker_process_cpu_cores", "{{job}} {{instance}}")], "short",
+   "Exported by lab/worker.py itself (cAdvisor cannot see containers on Docker Desktop). A Python worker is "
+   "GIL-bound near 1.0 for Python work: step 1 of the schedule-to-start diagnosis.", minv=0)
+ts("Worker process memory (RSS)", [("worker_process_rss_bytes", "{{job}} {{instance}}")], "bytes",
+   "Grows with the sticky cache (MAX_CACHED_WORKFLOWS) and with in-flight activity payloads.", minv=0)
+ts("Worker event-loop busy (utilization)", [("worker_event_loop_busy_ratio", "{{job}} {{instance}}")], "percentunit",
+   "Fraction of time the asyncio loop was not idle (lab/worker.py). Near 100% while worker CPU is low = the loop is "
+   "blocked on synchronous I/O inside async code.", minv=0)
+ts("Worker event-loop lag (ms)", [("worker_event_loop_lag_ms", "{{job}} {{instance}}")], "ms",
+   "Worst asyncio lag per 2 s (lab/worker.py probe). Healthy is ~0-15 ms. Hundreds of ms = something blocks the "
+   "event loop: a blocking call or CPU work inside an `async def` activity.", minv=0)
 
 row("3. Temporal server")
 ts("Cluster membership: live replicas per service", [('count by (role) (up{job="temporal"} == 1)', "{{role}}")], "short",

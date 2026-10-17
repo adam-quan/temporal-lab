@@ -47,6 +47,8 @@ async def work_async(spec: WorkSpec) -> str:
     _maybe_fail(spec)
     if spec.cpu_ms:
         _burn_cpu(spec.cpu_ms)  # INTENTIONAL: blocks the event loop. Watch what else on this worker slows down.
+    if spec.block_ms:
+        time.sleep(spec.block_ms / 1000.0)  # INTENTIONAL bug: a blocking call (think requests.get) in `async def`
     remaining = spec.work_ms / 1000.0
     hb = spec.heartbeat_every_ms / 1000.0
     started = time.monotonic()
@@ -66,6 +68,8 @@ def work_sync(spec: WorkSpec) -> str:
     _maybe_fail(spec)
     if spec.cpu_ms:
         _burn_cpu(spec.cpu_ms)
+    if spec.block_ms:
+        time.sleep(spec.block_ms / 1000.0)  # fine here: runs in the activity thread pool
     remaining = spec.work_ms / 1000.0
     hb = spec.heartbeat_every_ms / 1000.0
     started = time.monotonic()

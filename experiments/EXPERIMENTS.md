@@ -142,6 +142,15 @@ lg ramp --shape signal --keys 1    --rates 500,1000 --step-seconds 60 --run-id h
 lg ramp --shape signal --keys 1000 --rates 500,1000 --step-seconds 60 --run-id hotK1000
 make shard WF=hotK1-signal-k0 SHARDS=4     # one shard, one owner, one CPU-bound history replica
 python3 -m lab.probe shard-dist --pattern 'order-{i}' --count 100000 --shards 512   # ID scheme skew (needs pyfarmhash locally)
+# worker bottlenecks, end to end (slots / cpu / blocking / pollers / cache / ratelimit): experiments/worker-performance.md
+make workerperf ARGS="run --scenario slots"                        # PASS = issue reproduced AND diagnosed via Recipe 2
+make workerperf ARGS="run --scenario slots --fix"                  # PASS = healthy after the recommended fix
+# rejected database calls (persistence QPS limits): four checks -> outcome A/B/C/D, and the config traps: experiments/history-persistence-qps.md
+make persistenceqps ARGS="run --scenario throttle"                 # PASS = outcome A surfaced (limit too low, DB had room)
+make persistenceqps ARGS="run --scenario raise"                    # PASS = refusals down >= 70% vs throttle, DB latency flat
+# history task processing + the write-reject loop (reproduce -> playbook readings -> scheduler limits): experiments/history-task-processing.md
+make historytasks ARGS="run --scenario loop"                       # PASS = write-reject loop surfaced (indicator > 5, > 10 refused/s)
+make historytasks ARGS="calibrate" && make historytasks ARGS="run --scenario fix"   # PASS = nothing refused, tasks wait at the scheduler
 # 3b. hot shard, end to end (reproduce -> playbook detection -> verified fixes): experiments/hot-shard.md
 make hotshard ARGS="run --kind restart"                            # PASS = hot shard detected AND neighbours slowed
 make hotshard ARGS="run --kind restart --expect healthy"           # after a fix from the guide
