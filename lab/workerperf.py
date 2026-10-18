@@ -394,6 +394,7 @@ async def run(cfg: dict) -> int:
 
 async def _drive(cfg, sc, params, rate, tq, run_id, workers, client, knobs, nworkers, latency_ms, expect) -> int:
     dur, warm = cfg["duration"], cfg["warmup"]
+    wall_start = time.time()   # for screenshots / Grafana time ranges
     errors: Dict[str, int] = defaultdict(int)
     pending: set = set()
     samples: List[Tuple[float, List[Sample], List[Optional[float]], List[Optional[int]]]] = []
@@ -590,6 +591,7 @@ async def _drive(cfg, sc, params, rate, tq, run_id, workers, client, knobs, nwor
     out = f"results/{run_id}.json"
     with open(out, "w") as f:
         json.dump(dict(cfg=cfg, scenario=sc, knobs=knobs, workers=nworkers, latency_ms=latency_ms, metrics=m,
+                       wall_start=wall_start, wall_end=time.time(),
                        diagnosis=diag, healthy=healthy, passed=passed), f, indent=1, default=str)
     print(f"wrote {out}  (worker logs: {', '.join(logs)})")
     return 0 if passed else 1

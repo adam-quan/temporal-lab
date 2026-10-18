@@ -183,6 +183,11 @@ on the current code:
 
 What each fix means for your own workers:
 
+> **About the screenshots.** Each image below covers one scenario's issue run followed directly by its `--fix` run,
+> so the change is visible in one panel (Temporal Lab dashboard, row *2. SDK workers*, and *Worker Task Slots
+> Available* from the Temporal SDK dashboard). They come from a re-run on 2026-10-18 (times in UTC), because
+> Prometheus keeps 7 days; every verdict reproduced and the figures were within a few percent of those quoted here.
+
 ### `slots`: size executor slots from the workload (2b-A)
 
 Slots ≈ arrival rate × task duration × headroom. Here that is 40 activities/s × 0.5 s = 20 in flight; 100 leaves 5×
@@ -190,6 +195,15 @@ headroom. Raise slots only when CPU and memory have room (step 1 first). For lon
 HTTP calls, prefer generous **fixed-size** slots: a resource-based tuner keys on CPU, and those activities hold a slot
 with almost no CPU. To try a size:
 `make workerperf ARGS="run --scenario slots --worker-env MAX_CONCURRENT_ACTIVITIES=20 --expect healthy"`.
+
+![Activity schedule→start p50/p99, `slots` issue run (01](img/worker-performance/slots-activity-s2s.png)
+*Activity schedule→start p50/p99, `slots` issue run (01:15:30–01:18:50 UTC) then fix: during the issue activities wait minutes for a slot, with p99 reaching ~17 minutes as the backlog drains; after the fix both lines sit near zero.*
+
+![Worker Task Slots Available per task queue, same window](img/worker-performance/slots-slots.png)
+*Worker Task Slots Available per task queue, same window: the issue run's `ActivityWorker` slots at 0 (the line on the axis), the fix run's at 100. Note the y-axis reaches 1K because of one long-lived series.*
+
+![Worker process CPU, same window](img/worker-performance/slots-cpu.png)
+*Worker process CPU, same window: 0.1–0.2 cores in both runs. Slots exhausted with idle CPU is step 2b-A.*
 
 ### `cpu`: scale out, not up (2a)
 
@@ -199,6 +213,15 @@ change that; neither do more slots. Run more worker processes or pods (`--worker
 up as **workflow**-task slot depletion and a workflow-task backlog: the GIL starved the event loop that completes
 workflow tasks.
 
+![Worker process CPU, `cpu` issue run (01](img/worker-performance/cpu-cpu.png)
+*Worker process CPU, `cpu` issue run (01:20:35–01:22:40) then fix: one process pinned just above 1 core, then three processes at ~0.63 each.*
+
+![Workflow task schedule→start p50/p99, same window](img/worker-performance/cpu-wft-s2s.png)
+*Workflow task schedule→start p50/p99, same window: p99 at ~1.6 minutes while the single process is saturated; near zero with three.*
+
+![Worker Task Slots Available, same window](img/worker-performance/cpu-slots.png)
+*Worker Task Slots Available, same window: `WorkflowWorker` slots at 0 during the issue run (the GIL starved the event loop that completes workflow tasks), 300 free across three processes after.*
+
 ### `blocking`: never block the event loop in `async def`
 
 `async def` activities share the worker's event loop with workflow-task processing. One blocking call (a sync HTTP
@@ -206,6 +229,15 @@ client, `time.sleep`, CPU-heavy parsing) stalls every task on that worker. The f
 use an async client (`httpx.AsyncClient`, `aiohttp`), or make the activity a plain `def` so it runs in the activity
 thread pool (`activity_executor`, sized ≥ `max_concurrent_activities`). **Raising slots would not help**, although
 the slot panel says otherwise.
+
+![Worker event-loop busy, `blocking` issue run (01](img/worker-performance/blocking-loop-busy.png)
+*Worker event-loop busy, `blocking` issue run (01:24:20–01:26:20) then fix: the asyncio loop ~100% busy while the process uses 0.11 cores; ~7% after moving the blocking call to a sync activity.*
+
+![Workflow task schedule→start, same window](img/worker-performance/blocking-wft-s2s.png)
+*Workflow task schedule→start, same window: p99 at ~1.6 minutes during the issue run, near zero after the fix.*
+
+![Worker Task Slots Available, same window](img/worker-performance/blocking-slots.png)
+*Worker Task Slots Available, same window: `WorkflowWorker` slots drain to 0 during the issue run. This is the panel that says "raise slots"; the loop-busy panel above says why that would not help.*
 
 ### `pollers`: let the SDK size pollers (2b-B/D)
 
@@ -222,6 +254,12 @@ Two notes:
 * RPC p50 stays 75 ms after the fix. Autoscaling does not make the link faster; it hides the latency with more
   requests in flight. If you can, also move workers closer to the server (2b-D).
 
+![Pollers and empty polls, `pollers` issue run then fix](img/worker-performance/pollers-pollers.png)
+*Pollers and empty polls, `pollers` issue run then fix: few pollers during the issue run; after switching to `PollerBehaviorAutoscaling` (around 01:31) the workflow-task pollers grow to ~60 on their own.*
+
+![Workflow task schedule→start, same window](img/worker-performance/pollers-wft-s2s.png)
+*Workflow task schedule→start, same window: p99 at ~1.6 minutes with two pollers on the slow link; near zero once autoscaling has added pollers.*
+
 ### `cache`: size the sticky cache to the open workflows (Recipe 4)
 
 With 100 open workflows and a 10-entry cache, every workflow task was a miss (3,991 forced evictions). Each one
@@ -233,6 +271,15 @@ memory permitting. Here, 1,000 cached all 100 (RSS 125 MB) with zero misses.
 climbing, is the tell. Note that `temporal_workflow_task_replay_latency` stayed under 1 ms here (section 4), so watch
 workflow-task execution latency and CPU instead.
 
+![Sticky cache hit / miss and size, `cache` issue run (01](img/worker-performance/cache-sticky-cache.png)
+*Sticky cache hit / miss and size, `cache` issue run (01:32:45–01:34:15) then fix: misses (yellow) up to ~90/s with hits near zero and 10 cached workflows; after the fix, ~190 hits/s, no misses, 100 workflows cached.*
+
+![Worker process CPU, same window](img/worker-performance/cache-cpu.png)
+*Worker process CPU, same window: ~1.4 cores while every workflow task replays, ~0.35 cores with the cache sized to the open workflows.*
+
+![Workflow task execution vs replay latency p99, same window](img/worker-performance/cache-wft-exec-replay.png)
+*Workflow task execution vs replay latency p99, same window: execution climbs to ~490 ms as histories grow, while the replay metric stays near zero. This is finding 4 in section 4: watch execution latency and CPU, not the replay metric.*
+
 ### `ratelimit`: check your own options (2b-C)
 
 `max_task_queue_activities_per_second` is enforced **by the server** for the whole task queue, and any worker can
@@ -240,6 +287,12 @@ set it. Here dispatch flat-lined at exactly 5.0/s while 99% of slots sat idle; `
 the effective limit. Remove it, or set it above real demand. The per-worker version is `max_activities_per_second`.
 
 ---
+
+![Activity schedule→start p50/p99, `ratelimit` issue run (01](img/worker-performance/ratelimit-activity-s2s.png)
+*Activity schedule→start p50/p99, `ratelimit` issue run (01:35:40–01:39:00) then fix: activities queue for minutes behind the 5/s task-queue limit (p99 up to ~17 minutes as the backlog drains), then near zero once it is removed.*
+
+![Worker Task Slots Available, same window](img/worker-performance/ratelimit-slots.png)
+*Worker Task Slots Available, same window: slots free (~100) throughout. Slow dispatch with idle slots and idle CPU is step 2b-C.*
 
 ## 4. Things this test showed that the references do not spell out
 

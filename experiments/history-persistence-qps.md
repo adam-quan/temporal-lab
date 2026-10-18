@@ -116,6 +116,9 @@ probe       unrelated workflow start->result p95: 40 ms at baseline, 46719 ms du
 RESULT: PASS (outcome A: > 10 refused calls/s at scope System, database had room, requests failing)
 ```
 
+![History Rejected Database Calls Total by Scope, `throttle` run (01](img/history-persistence-qps/throttle-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `throttle` run (01:45–01:48 UTC): a burst at scope `Namespace` in the first seconds, then `System` refusals at ~300/s for a minute, draining as the backlog clears. Cause `PersistenceLimit` throughout.*
+
 What to notice:
 
 * **The database never noticed.** `UpdateWorkflowExecution` p95 stayed at 5.0 ms while the limiter refused up to 309
@@ -139,6 +142,9 @@ namespace `lab`) in the other. The playbook's order:
 sum(rate(persistence_errors_resource_exhausted{service_name="history"}[$__rate_interval])) by (resource_exhausted_scope, resource_exhausted_cause)
 ```
 
+![Rejected Database Calls by Operation and Scope (namespace `lab`), `throttle` run](img/history-persistence-qps/throttle-rejected-by-operation.png)
+*Rejected Database Calls by Operation and Scope (namespace `lab`), `throttle` run: `CreateWorkflowExecution` refused in the opening seconds (the client starts, at scope `Namespace`), then `GetWorkflowExecution` re-reads for the rest of the burst. The pod's own system work is not in this per-namespace panel.*
+
 Cause `PersistenceLimit`: Temporal's own limiter, the database was never asked. (On a SQL store that is the only
 cause this metric can carry.) Scope `System` is the per-pod check; `Namespace` is the per-namespace **or** per-shard
 check, which share the tag.
@@ -161,6 +167,9 @@ docker compose logs history | grep -hoE "(System|Namespace|Namespace Per-Shard) 
 | *Total Timer Tasks Errors* | **0** | `task_errors` counts unexpected errors only; throttling is expected |
 | *Per-Shard Persistence RPS Distribution* | max 5/s against 309 refusals/s | 30-second average of a one-second bucket |
 | *Timer Task Scheduling Latency* | (empty on this lab) | the queue-lag metric is emitted every 5 minutes |
+
+![Persistence Availability over the whole `throttle` run](img/history-persistence-qps/throttle-availability.png)
+*Persistence Availability over the whole `throttle` run: 100% while up to 309 database calls a second were being refused.*
 
 ### 4.3 Three counters, three numbers, all correct
 
@@ -196,6 +205,15 @@ which is why every run settles for 75 s first.
 | **3** Is the write-reject loop running? | *Write-Reject Loop Indicator* | 4.9 (cleared 44.9/s, miss 9.1/s) | borderline, not running |
 | **4** Who is being throttled? | *Resource Exhausted with Cause*, by operation | no client-facing method; `RespondWorkflowTaskCompleted` and `RecordChildExecutionCompleted` refused | **executions stalling** (the playbook's qualifier: treat as affected) |
 
+![Check 2, Persistence Latencies (p95), `throttle` run](img/history-persistence-qps/throttle-persistence-latencies.png)
+*Check 2, Persistence Latencies (p95), `throttle` run: every operation stays within 5–18 ms through the burst, as at baseline. The database was never the constraint.*
+
+![Check 3, Write-Reject Loop Indicator, `throttle` run](img/history-persistence-qps/throttle-loop-indicator.png)
+*Check 3, Write-Reject Loop Indicator, `throttle` run: state cleared (yellow) spikes to ~700/s at the start of the burst against ~170/s of cache misses (blue), then both settle. The test's average ratio for the run was 4.9: borderline, not a running loop.*
+
+![Check 4, Resource Exhausted with Cause, `throttle` run](img/history-persistence-qps/throttle-resource-exhausted.png)
+*Check 4, Resource Exhausted with Cause, `throttle` run: the purple lines are `RespondWorkflowTaskCompleted` refused in history and at the frontend (the worker finishing workflow tasks), and the red line is `RecordChildExecutionCompleted`. Progress-carrying RPCs, all retried; no client-facing method failed.*
+
 **Saturation line** (playbook 4.5, check 2): `300 / 512 shards = 0.59/s per shard`, below the per-shard p99 of 1.3: by
 the playbook's table, "even unremarkable shards are over budget. The limit is low for this workload."
 
@@ -223,6 +241,12 @@ RESULT: PASS (vs the last `throttle` run: refused calls in total down >= 50%, ba
 | refused calls in total | 8,483 | **3,018** |
 | `UpdateWorkflowExecution` p95 | 5.0 ms | 8.3 ms: the database is starting to feel it; raise in steps and stop when this climbs |
 | unrelated probe p95 | 46.7 s | 11.4 s |
+
+![History Rejected Database Calls Total by Scope, `raise` run (limit 1200)](img/history-persistence-qps/raise-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `raise` run (limit 1200): a single 40-second burst of `System` refusals, peaking higher than in `throttle` because the same work arrives in a sixth of the time.*
+
+![Persistence Latencies (p95), `raise` run](img/history-persistence-qps/raise-persistence-latencies.png)
+*Persistence Latencies (p95), `raise` run: writes still within 5–19 ms. The database had room for the raise.*
 
 Two readings that look wrong and are not:
 
@@ -252,6 +276,9 @@ check 1      enforced per-pod limit: persistenceMaxQPS 1200;  persistenceNamespa
 RESULT: PASS (refusals continue although the pod limit was raised, and scope Namespace outweighs System)
 ```
 
+![History Rejected Database Calls Total by Scope, `nsequal` run](img/history-persistence-qps/nsequal-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `nsequal` run: every refusal at scope `Namespace` (green), none at `System` (flat yellow). The namespace limit of 300 is the ceiling; the raised pod limit of 1200 is never reached.*
+
 Every refusal was at scope **`Namespace`**, none at `System`: the pod limit of 1200 never bound, because the namespace
 check runs first and was still at 300. The backlog took **92 s** instead of `raise`'s 42 s. **The fix** is to set
 `history.persistenceNamespaceMaxQPS` back to `0` (it then follows the pod limit) or genuinely lower than the pod limit
@@ -262,6 +289,9 @@ if you want that namespace capped. The tell is the scope tag moving to `Namespac
 ```sh
 make persistenceqps ARGS="run --scenario global"       # persistenceGlobalMaxQPS: 300, persistenceMaxQPS: 20000
 ```
+
+![History Rejected Database Calls Total by Scope, `global` run](img/history-persistence-qps/global-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `global` run: the same shape as `throttle` (a `Namespace` burst, then ~300/s at `System` for a minute), although `persistenceMaxQPS` is 20,000. The cluster-wide 300 is what is enforced.*
 
 Refused at scope `System`, 110.8/s, and drained in **233 s**: the same as `throttle` (239 s). The per-pod value of
 20,000 did nothing. With a cluster-wide limit set, **tune that one**, and set `persistenceMaxQPS` to roughly one pod's
@@ -284,6 +314,12 @@ RESULT: PASS (set on a running pod, per-pod 0 does not switch limiting off: the 
         every call, so history stops)
 ```
 
+![History Rejected Database Calls Total by Scope, `zero` run on a running pod](img/history-persistence-qps/zero-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `zero` run on a running pod: `System` refusals climbing to 1.1K a second and staying there; nothing completes.*
+
+![Rejected Database Calls by Operation and Scope (namespace `lab`), `zero` run](img/history-persistence-qps/zero-rejected-by-operation.png)
+*Rejected Database Calls by Operation and Scope (namespace `lab`), `zero` run: every `CreateWorkflowExecution` (the client starts) refused at the start. The rest of the 1.1K/s is the pod's own work (`UpdateShard`, task loading), which this per-namespace panel does not show.*
+
 **Every** call was refused, up to 1,107 a second: not one of 800 executions completed in three and a half minutes,
 every client start failed, and `UpdateShard` (shard-ownership renewal) was refused 442 times a second. In
 `common/persistence/client/fx.go` the limiters are created once, at pod start, only if `persistenceMaxQPS > 0`; after
@@ -299,6 +335,12 @@ make persistenceqps ARGS="run --scenario zero --expect unlimited"   # and: docke
 4.1 confirm  history DB calls refused, by scope and cause: none
 RESULT: PASS (nothing refused at all, not even by the namespace limit of 50: the pod STARTED with per-pod 0, so no limiter was built)
 ```
+
+![History Rejected Database Calls Total by Scope, `zero` with a restart](img/history-persistence-qps/zero-startup-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `zero` with a restart: until 02:27:10 the 0 setting refuses everything on the running pod; history restarts with 0 in place and refusals stop for good, including during the burst at 02:28.*
+
+![Persistence Requests per Namespace and Operation, the same window](img/history-persistence-qps/zero-startup-persistence-requests.png)
+*Persistence Requests per Namespace and Operation, the same window: the burst at 02:28:10 goes straight through, unlimited (up to ~470 requests a second for one operation), with no refusals.*
 
 Nothing refused, the namespace limit of 50 ignored, 2,100 executions in 22 s. **The log reads the same both ways**
 (`"new-quota":0`), so it cannot tell you which you have. Never set `persistenceMaxQPS` to 0; guard against it where
@@ -319,6 +361,12 @@ make persistenceqps ARGS="run --scenario dbslow"       # persistenceMaxQPS: 300 
 check 2      UpdateWorkflowExecution p95 8.7 ms at baseline -> 97.4 ms (p99 99.5) -> DB COULD NOT TAKE MORE
 4.6 outcome  C: database could not take more, requests failing -> do NOT raise; more DB capacity or less work
 ```
+
+![Check 2, Persistence Latencies (p95), `dbslow` run](img/history-persistence-qps/dbslow-persistence-latencies.png)
+*Check 2, Persistence Latencies (p95), `dbslow` run: from ~10 ms to ~97 ms for every write as soon as the extra Postgres latency is applied (02:07:20). This is what "latency climbing" looks like.*
+
+![History Rejected Database Calls Total by Scope, `dbslow` run](img/history-persistence-qps/dbslow-rejected-by-scope.png)
+*History Rejected Database Calls Total by Scope, `dbslow` run: refusals continue too (the opening spike is task loading, `Get*Tasks`, refused as the burst starts). Raising the limit here would only send more work to a database that is already slow.*
 
 Same limit and workload as `throttle`, but every Postgres response is 3 ms slower (through toxiproxy), so writes take
 ~100 ms. **Do not raise the limit**: it trades clean, retried refusals for timeouts, and timeouts count toward the
@@ -345,6 +393,12 @@ history.persistenceDynamicRateLimitingParams:
 backoff     Adaptive Rate Limit Multiplier reached 0.20 (1.0 = no reduction)
 RESULT: PASS (Adaptive Rate Limit Multiplier dropped below 1.0: backoff cut the pod's rate as the database slowed)
 ```
+
+![Adaptive Rate Limit Multiplier, `backoff` run](img/history-persistence-qps/backoff-multiplier.png)
+*Adaptive Rate Limit Multiplier, `backoff` run: falls from 70% to the 20% floor within half a minute of the database slowing, moves between 20% and 50% as latency changes, and settles at the floor.*
+
+![Persistence Latencies (p95), `backoff` run](img/history-persistence-qps/backoff-persistence-latencies.png)
+*Persistence Latencies (p95), `backoff` run: a spike to ~4.5 s as the extra Postgres latency meets the full burst at a 1200/s limit, then back near the slow-database level once backoff has cut the rate.*
 
 **Panel:** *Adaptive Rate Limit Multiplier* (`dynamic_rate_limit_multiplier`). It reached the 0.2 floor: the pod cut
 its own rate to a fifth of 1200 while the database was slow. Two cautions: `enabled: true` alone does nothing (set a

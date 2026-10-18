@@ -102,16 +102,33 @@ after     |           0.5      1.0    200.0   398.9x |           1.0 ms |       
 RESULT: PASS (expect=hot: the hot shard must be both detected and harmful)
 ```
 
+> **About the screenshots.** Prometheus keeps 7 days, so the panels in this guide come from a re-run of the
+> scenarios on 2026-10-18 (times in UTC). Every verdict reproduced, and most figures were within a few percent of
+> those quoted here. Two moved: `colocate` at 130/s slowed neighbours 13.2x (7.1x originally), and `can --hot-ids 64`
+> reached 2.8x (1.7x). Captions quote the re-run.
+
+![Per-Shard Persistence RPS Distribution (Hot-Shard Detector), `restart` re-run (00](img/hot-shard/restart-detector.png)
+*Per-Shard Persistence RPS Distribution (Hot-Shard Detector), `restart` re-run (00:32–00:36 UTC): the max line (hottest shard, blue) steps from 50 to 500 req/s for the hot phase while p50 and p99 stay near 0.5–1. One hot shard. The metric is emitted every 30 s, hence the steps.*
+
 Variations:
 
 | Command | What it shows |
 |---|---|
 | `run --kind restart --hot-ids 1` | strict single hot ID: detected, but neighbours only ~1.4x slower on a fast local DB |
 | `run --kind signal` | hot-key signal flood: shard RPS 50 → 1000, neighbours 3.9x slower (PASS) |
-| `run --kind can --hot-ids 64` | continue-as-new loops: detected (shard RPS 50 → 500) but only 1.7x harm here, just under the 2x threshold. Each run waits on a worker round trip, so CAN loops push fewer writes than start loops |
+| `run --kind can --hot-ids 64` | continue-as-new loops: detected (shard RPS 50 → 500); neighbours 1.7x slower in the first run, just under the 2x threshold, and 2.8x in the 2026-10-18 re-run. Borderline: each run waits on a worker round trip, so CAN loops push fewer writes than start loops |
 | `run --kind colocate` (no rate cap) | worst case: the aggressor grows until the shard saturates (~150 starts/s); neighbours are 55x slower |
 | `run --kind restart --victim-namespace lab-victim` | multi-tenant: victims in **another namespace** are hurt too (5.8x). First run `make cli ARGS="operator namespace create -n lab-victim --retention 24h"` |
 | `run --kind none` | control: no aggressor, everything at 1.0x |
+
+![Hot-Shard Detector, `signal` re-run](img/hot-shard/signal-detector.png)
+*Hot-Shard Detector, `signal` re-run: the hottest shard at 1,000 req/s during the signal flood.*
+
+![Hot-Shard Detector, `can --hot-ids 64` re-run](img/hot-shard/can64-detector.png)
+*Hot-Shard Detector, `can --hot-ids 64` re-run: the hottest shard at 500 req/s from the continue-as-new loops.*
+
+![Hot-Shard Detector, multi-tenant re-run (`--victim-namespace lab-victim`)](img/hot-shard/mt-detector.png)
+*Hot-Shard Detector, multi-tenant re-run (`--victim-namespace lab-victim`): the hottest shard at up to 1,000 req/s. The panel is cluster-wide: it shows a hot shard, not whose workflows share it.*
 
 **Choosing `--aggressor-rate`:** run `--kind colocate` once without a cap and read the aggressor's ops/s. That is the
 shard's ceiling on your machine (about 146/s here). Use about 90% of it. Fix C needs a fixed rate to compare fairly.
@@ -151,6 +168,9 @@ How to read it:
 * On a quiet cluster, p50 is close to zero and max/p50 is always large. Compare against your normal baseline, not just
   against p50. The test does this ("hottest shard vs baseline").
 
+![Hot-Shard Detector, `colocate` at 130/s (re-run)](img/hot-shard/colocate130-detector.png)
+*Hot-Shard Detector, `colocate` at 130/s (re-run): the hottest shard at 500 req/s for the whole hot phase, p50 and p99 flat. Many IDs on one shard look exactly like one hot ID on this panel (Step 2).*
+
 ### Step 2: Read the distribution shape
 
 | Shape | Meaning |
@@ -174,11 +194,20 @@ Semaphore p99 goes from 1 ms to 70 ms (`restart`) and to 0.4–2 s (`colocate`).
 ~10 ms**. That pairing tells a hot shard apart from a slow database: the waiting happens in front of the shard's write
 pipeline, not inside Postgres.
 
+![Shard IO Semaphore Latency (high priority, p99), `restart` re-run](img/hot-shard/restart-semaphore.png)
+*Shard IO Semaphore Latency (high priority, p99), `restart` re-run: from ~1 ms to a peak of ~146 ms as the hot phase starts, settling near 50 ms, back to ~1 ms after.*
+
+![Shard IO Semaphore Latency, `colocate` at 130/s (re-run)](img/hot-shard/colocate130-semaphore.png)
+*Shard IO Semaphore Latency, `colocate` at 130/s (re-run): up to ~1 s. Writes on the hot shard queue behind each other while the database itself stays fast.*
+
 ### Step 4: Identify the driver
 
 * Temporal Server Dashboard → **Persistence Requests per Namespace and Operation** (namespace `lab`): in a `restart`
   run, `CreateWorkflowExecution`, `UpdateWorkflowExecution` and `GetWorkflowExecution` each go from ~10/s to ~80–90/s.
   This identifies the namespace and the operation mix (starts plus updates means a start or restart loop).
+![Persistence Requests per Namespace and Operation (namespace `lab`), `restart` re-run](img/hot-shard/restart-requests-by-operation.png)
+*Persistence Requests per Namespace and Operation (namespace `lab`), `restart` re-run: workflow reads and writes climb together for the hot phase, with `CreateWorkflowExecution` (red) at ~145/s. Starts plus updates: a start or restart loop.*
+
 * Find the workflow IDs from visibility:
 
   ```sh
@@ -243,6 +272,12 @@ history.workflowIdReuseMinimalInterval:
 make hotshard ARGS="run --kind restart --expect healthy"       # PASS: 1.1x, aggressor errors: RESOURCE_EXHAUSTED:BusyWorkflow
 ```
 
+![Hot-Shard Detector with Fix A on (re-run)](img/hot-shard/restart-guard-detector.png)
+*Hot-Shard Detector with Fix A on (re-run): the hottest shard reaches only 100 req/s, against 500 without it.*
+
+![Resource Exhausted with Cause with Fix A on](img/hot-shard/restart-guard-resource-exhausted.png)
+*Resource Exhausted with Cause with Fix A on: `StartWorkflowExecution` rejected with cause `BusyWorkflow` at ~23/s, at the frontend and in history. That is the guardrail refusing same-ID restarts.*
+
 Starts of the same ID closer together than the interval are rejected with `RESOURCE_EXHAUSTED` / `BusyWorkflow`.
 Eight IDs × one start per 2 s = 4 starts/s, so the hot shard dropped from 500 to 100 RPS. The server counted ~46
 rejections/s (`service_errors_resource_exhausted{resource_exhausted_cause="BusyWorkflow"}`). The aggressor, which has
@@ -264,12 +299,24 @@ make hotshard ARGS="run --kind restart --victim-namespace lab-victim --expect he
 make hotshard ARGS="run --kind restart --expect healthy"                                  # FAIL: see below
 ```
 
+![Resource Exhausted with Cause with Fix B on (cap of 100 for namespace `lab`)](img/hot-shard/mt-cap-resource-exhausted.png)
+*Resource Exhausted with Cause with Fix B on (cap of 100 for namespace `lab`): `StartWorkflowExecution` refused with `PersistenceLimit` at ~31/s, the aggressor namespace's per-shard cap.*
+
+![Rejected Database Calls by Namespace, same run](img/hot-shard/mt-cap-rejected-by-namespace.png)
+*Rejected Database Calls by Namespace, same run: every refusal is in namespace `lab` (~90/s); nothing in `lab-victim`, whose victims stayed at 1.2x.*
+
 This protects **other** namespaces: victims in `lab-victim` went from 5.8x to 1.2x, and the aggressor was cut from
 116/s to 25/s (`PersistenceLimit`). Know the cost before using it. When the victims share the capped namespace, the
 second command fails hard: start→result p50 went from 38 ms to **35 s** for *every* `lab` workflow, on every shard,
 with timeouts. The capped namespace's history tasks wait on the rate limiter while holding that namespace's share of
 the history host's task scheduler, so the whole namespace stalls (history task p99 ~5 s). Cap only the namespace that
 causes the problem, and only to protect other namespaces.
+
+![Rejected Database Calls by Namespace, the same cap with the victims in namespace `lab` (re-run)](img/hot-shard/samens-cap-rejected-by-namespace.png)
+*Rejected Database Calls by Namespace, the same cap with the victims in namespace `lab` (re-run): the same ~90/s as above. The panel looks identical, yet this time every `lab` workflow ran ~1,000x slower than its baseline. Judge this guardrail on end-to-end latency, not on the rejection panels.*
+
+![Resource Exhausted with Cause, same run](img/hot-shard/samens-cap-resource-exhausted.png)
+*Resource Exhausted with Cause, same run: again `StartWorkflowExecution` refused with `PersistenceLimit` at ~31/s.*
 
 ### Fix C: raise per-shard write concurrency (Kind 1, SQL only)
 
@@ -281,6 +328,12 @@ history.shardIOConcurrency:
 docker compose restart history        # read when a shard is loaded: the 5 s reload is not enough
 make hotshard ARGS="run --kind colocate --aggressor-rate 130 --expect healthy"   # PASS: 1.0x (was 7.1x at concurrency 1)
 ```
+
+![Shard IO Semaphore Latency with `shardIOConcurrency](img/hot-shard/colocate130-io4-semaphore.png)
+*Shard IO Semaphore Latency with `shardIOConcurrency: 4`, same 130 starts/s (re-run): ~1–2 ms through the hot phase (00:50–00:52), against up to ~1 s at concurrency 1. The brief spike right after 00:52 is after the hot phase ended.*
+
+![Hot-Shard Detector, same run](img/hot-shard/colocate130-io4-detector.png)
+*Hot-Shard Detector, same run: the hottest shard now does up to 1,000 req/s without hurting its neighbours. The red band is the dashboard's *Service Restarts* annotation: history was restarted just before this run, which `shardIOConcurrency` requires.*
 
 With the same 130 starts/s, semaphore p99 fell from 357 ms to 1.6 ms and the neighbours were unaffected. Two caveats:
 

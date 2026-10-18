@@ -108,6 +108,9 @@ probe       burst  unrelated workflow: start->result p50 34 ms  p95 4159 ms  (1 
 RESULT: PASS (expect=loop: the write-reject loop surfaced: indicator peak > 5 with > 10 refused calls/s)
 ```
 
+![History Task Throughput, `loop` run (19](img/history-task-processing/loop-task-throughput.png)
+*History Task Throughput, `loop` run (19:02–19:17 UTC): bursts of up to ~200 attempts a second separated by 1–2 minute gaps near zero while hundreds of workflows were still waiting. This panel counts attempts, not completed tasks (step 4).*
+
 What to notice:
 
 * **The loop forms within seconds.** In the first 24 s the indicator was 47: state was thrown away 47 times faster
@@ -155,6 +158,9 @@ The panel's two companion lines matter as much as the ratio: state **cleared** a
 start) while genuine cache misses stayed at 8.1/s. A cache that is too small shows the opposite (misses high).
 Resizing `history.hostLevelCacheMaxSize` would not help.
 
+![Write-Reject Loop Indicator, `loop` run](img/history-task-processing/loop-indicator.png)
+*Write-Reject Loop Indicator, `loop` run: state cleared (yellow) peaks at 262/s while genuine cache misses (blue) stay under 60/s. The ratio line (green, legend max 54.1) is the one the playbook reads; it sits low on this scale because the panel draws all three lines together.*
+
 ### Step 2: who is being refused? (playbook 1.2, 3.3)
 
 **Panel:** *Rejected Database Calls by Operation and Scope*.
@@ -174,6 +180,9 @@ fetch is retried on the next read. That setting is off by default; ignore this l
 
 If the top entries are `GetTransferTasks` / `GetTimerTasks` / `GetVisibilityTasks` instead, that is task
 **loading** being throttled, a different and later step (playbook 7).
+
+![Rejected Database Calls by Operation and Scope (namespace `lab`), `loop` run](img/history-task-processing/loop-rejected-by-operation.png)
+*Rejected Database Calls by Operation and Scope (namespace `lab`), `loop` run: the tall line is `GetWorkflowExecution`, the re-reads, peaking around 90/s, with `UpdateWorkflowExecution` (the refused writes that cause them) far below. Each later wave repeats the pattern.*
 
 ### Step 3: attempts versus what reached the database (playbook 3.5)
 
@@ -215,6 +224,9 @@ Flat latency means the limiter turned the calls away before Postgres saw them. N
 `RespondWorkflowTaskCompleted`, 1,197 `RecordChildExecutionCompleted`, 231 `StartWorkflowExecution`, all retried
 silently by the SDK and by history. The user-visible symptom is executions not moving: the probe workflow's p95 went
 from 51 ms to 4.2 s.
+
+![Resource Exhausted with Cause, `loop` run](img/history-task-processing/loop-resource-exhausted.png)
+*Resource Exhausted with Cause, `loop` run: the early peak is `RespondWorkflowTaskCompleted` refused in history and at the frontend (the worker finishing workflow tasks), and the repeating red waves are `RecordChildExecutionCompleted`. All retried; no client saw an error.*
 
 ### Step 7: would the alerts have fired? (playbook 8.1)
 
@@ -280,6 +292,12 @@ gave 4.93 and 4.63). Two things matter for getting it right:
   calibration counted 32.3 attempts/s for 25.1 completions/s even with nothing refused. The test uses
   `task_attempt_count`.
 
+![History Task Throughput during calibration (16](img/history-task-processing/calibrate-task-throughput.png)
+*History Task Throughput during calibration (16:07–16:09 UTC): a steady ~32 attempts a second with nothing refused. The tasks completed in the same window (25.1/s) are what the test divides by.*
+
+![Database Calls That Reached the Database during calibration](img/history-task-processing/calibrate-reached-database.png)
+*Database Calls That Reached the Database during calibration: the numerator of calls per task. Nothing was refused, so attempts and calls that reached the store are the same.*
+
 The numbers are written to `results/historytasks-calibration.json`; the `fix`, `shadow` and `toolow` scenarios read
 them from there.
 
@@ -324,6 +342,15 @@ RESULT: PASS (expect=healthy: task attempts refused <= 2/s, no loop, scheduler t
 | loop indicator | peak 13.2 | **1.5 flat** after the first 30 s | |
 | scheduler throttled | 0 | **235/s** | tasks wait instead of failing: the setting working |
 
+![History Task Throughput across the `loop` run (19](img/history-task-processing/loop-vs-fix-task-throughput.png)
+*History Task Throughput across the `loop` run (19:02–19:17) and then the `fix` run (19:18–19:27), same burst and same budget: waves and idle gaps, then a flat ~48 tasks a second held at the scheduler limit until the backlog was done.*
+
+![Task Scheduler Throttled Rate per Operation, `fix` run](img/history-task-processing/fix-scheduler-throttled.png)
+*Task Scheduler Throttled Rate per Operation, `fix` run: 200–250 a second, mostly workflow-task timeout timers. This counts every refusal at the scheduler, so a task held back several times is counted several times; it is the limit working, not a fault.*
+
+![Write-Reject Loop Indicator across `loop` then `fix`](img/history-task-processing/loop-vs-fix-indicator.png)
+*Write-Reject Loop Indicator across `loop` then `fix`: repeated spikes of cleared state during the loop; a single spike at the start of `fix` (the client burst, before the limiter engaged), then flat.*
+
 That is the playbook's "what tuned looks like": throttling above zero, refusals near zero, backlog draining. Three
 things it did **not** fix, all worth knowing:
 
@@ -338,6 +365,9 @@ things it did **not** fix, all worth knowing:
   per namespace, so the probe queues behind the burst. To protect one workload from another, give them different
   namespaces and set `taskSchedulerGlobalNamespaceMaxQPS` per namespace (the playbook's `batch-reports` example in
   5.2).
+
+![Rejected Database Calls by Operation and Scope, `fix` run](img/history-task-processing/fix-rejected-by-operation.png)
+*Rejected Database Calls by Operation and Scope, `fix` run: refusals only in the first ~40 seconds (the burst of client starts, which the task scheduler does not limit), then none for the rest of the run.*
 
 ### Trap one: limiter on, shadow mode left on (playbook 4.2)
 
@@ -357,6 +387,12 @@ make historytasks ARGS="run --scenario shadow"     # same limits, shadow mode le
 RESULT: PASS (expect=loop+counted: the throttling panel shows throttling, yet the loop still runs
         (shadow mode counts and holds nothing back))
 ```
+
+![Task Scheduler Throttled Rate per Operation, `shadow` run](img/history-task-processing/shadow-scheduler-throttled.png)
+*Task Scheduler Throttled Rate per Operation, `shadow` run: throttling counted in waves of up to ~65 a second, so the limiter looks live. Nothing was held back.*
+
+![Write-Reject Loop Indicator, `shadow` run](img/history-task-processing/shadow-indicator.png)
+*Write-Reject Loop Indicator, `shadow` run: the same waves of cleared state as the unlimited run (peak 248/s).*
 
 Everything except the throttling panel matches the unlimited run. That is the trap: shadow mode records the
 throttle (`task_scheduler_throttled`) **before** it checks shadow mode, then lets the task through. The source
@@ -391,6 +427,12 @@ RESULT: PASS (expect=loop: limiter on and live, yet nothing throttled and the lo
         the 0 limits fell back to the persistence number)
 ```
 
+![Task Scheduler Throttled Rate per Operation, `zero` run](img/history-task-processing/zero-scheduler-throttled.png)
+*Task Scheduler Throttled Rate per Operation, `zero` run: flat at zero for the whole run, with the limiter switched on and shadow mode off.*
+
+![Write-Reject Loop Indicator, `zero` run](img/history-task-processing/zero-indicator.png)
+*Write-Reject Loop Indicator, `zero` run: waves of cleared state (up to 86/s against under 30/s of cache misses), the loop running as if nothing had been configured.*
+
 At `0` each limit falls back to the persistence number, 300, which counts **database calls**. As a **task** limit
 that admits 300 tasks/s against a budget that supports 65, so it never engages and the loop runs exactly as
 before.
@@ -423,6 +465,12 @@ probe       burst  unrelated workflow: start->result p50 107013 ms  p95 344100 m
 RESULT: PASS (expect=slow: nothing refused and no loop, tasks held at the scheduler, completions pinned at the
         configured limit: the limit, not the database, is the constraint)
 ```
+
+![History Task Throughput, `toolow` run](img/history-task-processing/toolow-task-throughput.png)
+*History Task Throughput, `toolow` run: pinned at 9 tasks a second, the configured namespace limit, for ten minutes. Nothing refused, and not one parent finished.*
+
+![Task Scheduler Throttled Rate per Operation, `toolow` run](img/history-task-processing/toolow-scheduler-throttled.png)
+*Task Scheduler Throttled Rate per Operation, `toolow` run: climbing to ~190 a second per task type as more of the backlog waits behind the limit.*
 
 Every rejection panel looks perfect: nothing refused, loop indicator flat. Meanwhile **not one of the 400 parents
 finished in 10 minutes**, because 9 tasks a second shared round-robin across all of them advances each one slowly,
