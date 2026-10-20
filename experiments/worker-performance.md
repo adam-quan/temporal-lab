@@ -255,7 +255,7 @@ Two notes:
   requests in flight. If you can, also move workers closer to the server (2b-D).
 
 ![Pollers and empty polls, `pollers` issue run then fix](img/worker-performance/pollers-pollers.png)
-*Pollers and empty polls, `pollers` issue run then fix: few pollers during the issue run; after switching to `PollerBehaviorAutoscaling` (around 01:31) the workflow-task pollers grow to ~60 on their own.*
+*Pollers and empty polls, `pollers` issue run then fix: every poller count at 1–5 and successful workflow polls flat at ~36/s during the issue run; after switching to `PollerBehaviorAutoscaling` (around 01:30:30) the workflow-task pollers (blue) vary between ~10 and ~40 on their own and successful polls rise to ~60/s.*
 
 ![Workflow task schedule→start, same window](img/worker-performance/pollers-wft-s2s.png)
 *Workflow task schedule→start, same window: p99 at ~1.6 minutes with two pollers on the slow link; near zero once autoscaling has added pollers.*
@@ -278,7 +278,7 @@ workflow-task execution latency and CPU instead.
 *Worker process CPU, same window: ~1.4 cores while every workflow task replays, ~0.35 cores with the cache sized to the open workflows.*
 
 ![Workflow task execution vs replay latency p99, same window](img/worker-performance/cache-wft-exec-replay.png)
-*Workflow task execution vs replay latency p99, same window: execution climbs to ~490 ms as histories grow, while the replay metric stays near zero. This is finding 4 in section 4: watch execution latency and CPU, not the replay metric.*
+*Workflow task execution vs replay latency p99, same window: execution climbs to ~490 ms as histories grow, while the replay series draws nothing at all. This is finding 4 in section 4: watch execution latency and CPU, not the replay metric.*
 
 ### `ratelimit`: check your own options (2b-C)
 

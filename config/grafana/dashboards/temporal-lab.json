@@ -275,7 +275,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "p50 {{task_queue}}",
      "editorMode": "code"
     },
@@ -285,7 +285,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "p99 {{task_queue}}",
      "editorMode": "code"
     }
@@ -336,7 +336,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.5, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "p50 {{task_queue}}",
      "editorMode": "code"
     },
@@ -346,7 +346,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.99, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "p99 {{task_queue}}",
      "editorMode": "code"
     }
@@ -398,7 +398,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (worker_type) (temporal_worker_task_slots_available)",
+     "expr": "sum by (worker_type) (temporal_worker_task_slots_available{job!='temporal'})",
      "legendFormat": "sum {{worker_type}}",
      "editorMode": "code"
     },
@@ -408,7 +408,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "min by (worker_type) (temporal_worker_task_slots_available)",
+     "expr": "min by (worker_type) (temporal_worker_task_slots_available{job!='temporal'})",
      "legendFormat": "min {{worker_type}}",
      "editorMode": "code"
     }
@@ -459,7 +459,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (worker_type) (temporal_worker_task_slots_used)",
+     "expr": "sum by (worker_type) (temporal_worker_task_slots_used{job!='temporal'})",
      "legendFormat": "{{worker_type}}",
      "editorMode": "code"
     }
@@ -510,7 +510,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_sticky_cache_hit[$__rate_interval]))",
+     "expr": "sum(rate(temporal_sticky_cache_hit{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "hit/s",
      "editorMode": "code"
     },
@@ -520,7 +520,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_sticky_cache_miss[$__rate_interval]))",
+     "expr": "sum(rate(temporal_sticky_cache_miss{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "miss/s",
      "editorMode": "code"
     },
@@ -530,7 +530,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(temporal_sticky_cache_size)",
+     "expr": "sum(temporal_sticky_cache_size{job!='temporal'})",
      "legendFormat": "cached workflows",
      "editorMode": "code"
     }
@@ -581,7 +581,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_execution_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_execution_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "execution p99",
      "editorMode": "code"
     },
@@ -591,7 +591,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(temporal_workflow_task_replay_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "replay p99",
      "editorMode": "code"
     }
@@ -642,7 +642,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "histogram_quantile(0.99, sum by (le, activity_type) (rate(temporal_activity_execution_latency_bucket[$__rate_interval])))",
+     "expr": "histogram_quantile(0.99, sum by (le, activity_type) (rate(temporal_activity_execution_latency_bucket{job!=\"temporal\"}[$__rate_interval])))",
      "legendFormat": "{{activity_type}}",
      "editorMode": "code"
     }
@@ -693,7 +693,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed[$__rate_interval]))",
+     "expr": "sum by (failure_reason) (rate(temporal_workflow_task_execution_failed{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "wft failed {{failure_reason}}",
      "editorMode": "code"
     },
@@ -703,7 +703,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_activity_execution_failed[$__rate_interval]))",
+     "expr": "sum(rate(temporal_activity_execution_failed{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "activity attempts failed",
      "editorMode": "code"
     }
@@ -754,7 +754,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (poller_type) (temporal_num_pollers)",
+     "expr": "sum by (poller_type) (temporal_num_pollers{job!='temporal'})",
      "legendFormat": "pollers {{poller_type}}",
      "editorMode": "code"
     },
@@ -764,7 +764,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_workflow_task_queue_poll_empty[$__rate_interval]))",
+     "expr": "sum(rate(temporal_workflow_task_queue_poll_empty{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "wf empty polls/s",
      "editorMode": "code"
     },
@@ -774,7 +774,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_workflow_task_queue_poll_succeed[$__rate_interval]))",
+     "expr": "sum(rate(temporal_workflow_task_queue_poll_succeed{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "wf successful polls/s",
      "editorMode": "code"
     },
@@ -784,7 +784,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum(rate(temporal_activity_poll_no_task[$__rate_interval]))",
+     "expr": "sum(rate(temporal_activity_poll_no_task{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "activity empty polls/s",
      "editorMode": "code"
     }
@@ -835,7 +835,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (workflow_type) (rate(temporal_workflow_completed[$__rate_interval]))",
+     "expr": "sum by (workflow_type) (rate(temporal_workflow_completed{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "completed {{workflow_type}}",
      "editorMode": "code"
     },
@@ -845,7 +845,7 @@
       "type": "prometheus",
       "uid": "prom"
      },
-     "expr": "sum by (workflow_type) (rate(temporal_workflow_failed[$__rate_interval]))",
+     "expr": "sum by (workflow_type) (rate(temporal_workflow_failed{job!='temporal'}[$__rate_interval]))",
      "legendFormat": "failed {{workflow_type}}",
      "editorMode": "code"
     }
@@ -1757,6 +1757,67 @@
   {
    "id": 34,
    "type": "timeseries",
+   "title": "Task timeouts/s fired by the server",
+   "description": "Timeouts are enforced by history, so a dead or partitioned worker shows up here, not in the worker's own metrics. Heartbeat timeouts detect a lost activity in seconds; StartToClose only after the whole timeout.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 83
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 4,
+      "showPoints": "never",
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum by (timeout_type) (rate(activity_task_timeout[$__rate_interval]))",
+     "legendFormat": "activity {{timeout_type}}",
+     "editorMode": "code"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prom"
+     },
+     "expr": "sum(rate(start_to_close_timeout{operation=\"TimerActiveTaskWorkflowTaskTimeout\"}[$__rate_interval]))",
+     "legendFormat": "workflow task StartToClose",
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "id": 35,
+   "type": "timeseries",
    "title": "Go goroutines by service",
    "description": "",
    "datasource": {
@@ -1766,7 +1827,7 @@
    "gridPos": {
     "h": 8,
     "w": 8,
-    "x": 8,
+    "x": 16,
     "y": 83
    },
    "fieldConfig": {
@@ -1806,7 +1867,7 @@
    ]
   },
   {
-   "id": 35,
+   "id": 36,
    "type": "row",
    "title": "4. Infrastructure",
    "collapsed": false,
@@ -1819,7 +1880,7 @@
    "panels": []
   },
   {
-   "id": 36,
+   "id": 37,
    "type": "timeseries",
    "title": "Container CPU cores by compose service",
    "description": "Which container saturates first?",
@@ -1874,7 +1935,7 @@
    ]
   },
   {
-   "id": 37,
+   "id": 38,
    "type": "timeseries",
    "title": "Container memory (working set)",
    "description": "",
@@ -1925,7 +1986,7 @@
    ]
   },
   {
-   "id": 38,
+   "id": 39,
    "type": "timeseries",
    "title": "Postgres connections by database",
    "description": "Each Temporal service holds a pool (SQL_MAX_CONNS). Scaling history hosts multiplies this.",
@@ -1976,7 +2037,7 @@
    ]
   },
   {
-   "id": 39,
+   "id": 40,
    "type": "timeseries",
    "title": "Postgres transactions/s (commit + rollback)",
    "description": "",
@@ -2037,7 +2098,7 @@
    ]
   },
   {
-   "id": 40,
+   "id": 41,
    "type": "timeseries",
    "title": "Postgres rows inserted / updated per second",
    "description": "Write amplification: compare with client starts/s.",
@@ -2098,7 +2159,7 @@
    ]
   },
   {
-   "id": 41,
+   "id": 42,
    "type": "timeseries",
    "title": "Prometheus scrape targets up",
    "description": "If a panel is empty, check that its job is up.",

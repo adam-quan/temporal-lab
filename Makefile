@@ -74,34 +74,34 @@ deploy-variant: ## "deploy" EvolvingWorkflow code:  make deploy-variant V=v2   (
 
 # ---------------------------------------------------------------- load and inspection
 smoke: ## one of every workflow type; run this first:  make smoke   (split fleet: ARGS="--task-queue lab-wf --activity-queue lab-act")
-	$(DC) run --rm loadgen smoke $(ARGS)
+	$(DC) run --rm --no-deps loadgen smoke $(ARGS)
 
 load: ## run the generator:  make load ARGS="ramp --shape noop --rates 10,50,100 --step-seconds 60"
-	$(DC) run --rm --name loadgen loadgen $(ARGS)
+	$(DC) run --rm --no-deps --name loadgen loadgen $(ARGS)
 
 probe: ## any probe subcommand:  make probe ARGS="count --run-id noop-123456-ab12"
-	$(DC) run --rm --entrypoint python loadgen -m lab.probe $(ARGS)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.probe $(ARGS)
 
 history: ## annotated event history:  make history WF=<workflow-id>
-	$(DC) run --rm --entrypoint python loadgen -m lab.probe history $(WF)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.probe history $(WF)
 
 count: ## workflows of a run by status:  make count RUN=<run_id>
-	$(DC) run --rm --entrypoint python loadgen -m lab.probe count --run-id $(RUN)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.probe count --run-id $(RUN)
 
 shard: ## which history shard owns an ID:  make shard WF=<workflow-id> SHARDS=512
-	$(DC) run --rm --entrypoint python loadgen -m lab.probe shard $(WF) --shards $(SHARDS)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.probe shard $(WF) --shards $(SHARDS)
 
 hotshard: ## hot-shard test:  make hotshard ARGS="run --kind restart"   (detector | shard <id>; see experiments/hot-shard.md)
-	$(DC) run --rm --entrypoint python loadgen -m lab.hotshard $(ARGS)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.hotshard $(ARGS)
 
 workerperf: ## worker-performance test:  make workerperf ARGS="run --scenario slots [--fix]"   (list; see experiments/worker-performance.md)
-	$(DC) run --rm --name loadgen --entrypoint python loadgen -m lab.workerperf $(ARGS)
+	$(DC) run --rm --no-deps --name loadgen --entrypoint python loadgen -m lab.workerperf $(ARGS)
 
 historytasks: ## history task processing test:  make historytasks ARGS="run --scenario loop"   (calibrate | indicator | reset; see experiments/history-task-processing.md)
-	$(DC) run --rm --entrypoint python loadgen -m lab.historytasks $(ARGS)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.historytasks $(ARGS)
 
 persistenceqps: ## history persistence QPS test:  make persistenceqps ARGS="run --scenario throttle"   (list | reset; see experiments/history-persistence-qps.md)
-	$(DC) run --rm --entrypoint python loadgen -m lab.persistenceqps $(ARGS)
+	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.persistenceqps $(ARGS)
 
 cli: ## temporal CLI:  make cli ARGS="workflow list --limit 5"
 	$(DC) exec admin-tools temporal $(ARGS)
