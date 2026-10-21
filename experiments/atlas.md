@@ -20,6 +20,7 @@ The `results/chaos.log` file gives you exact fault timestamps; the `results/*.js
 | 3B-3b | Hot shard: restart / signal / CAN loops, colocated IDs (`make hotshard`, experiments/hot-shard.md) |  |  |  |  |  |
 | 3B-5 | History task processing: write-reject loop and task-scheduler limits (`make historytasks`, experiments/history-task-processing.md) |  |  |  |  |  |
 | 3B-6 | Rejected database calls: persistence QPS limits, their traps, outcome A/C (`make persistenceqps`, experiments/history-persistence-qps.md) |  |  |  |  |  |
+| 3B-7 | Shard IO concurrency: writes queuing inside shards, raise vs slow DB vs small pool (`make shardio`, experiments/shard-io-concurrency.md) |  |  |  |  |  |
 | 3B-4 | numHistoryShards 1 vs 4 vs 512 |  |  |  |  |  |
 | 3C-1 | Namespace RPS limit -> RESOURCE_EXHAUSTED |  |  |  |  |  |
 | 3C-2 | Per-shard / per-namespace ceilings |  |  |  |  |  |

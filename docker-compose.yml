@@ -36,6 +36,8 @@ x-server: &server
     DBNAME: temporal
     VISIBILITY_DBNAME: temporal_visibility
     NUM_HISTORY_SHARDS: ${NUM_HISTORY_SHARDS:-4}
+    # SQL connection pool per service (maxConns in config/temporal/docker.yaml). make shardio changes it for history.
+    SQL_MAX_CONNS: ${SQL_MAX_CONNS:-20}
     PROMETHEUS_ENDPOINT: 0.0.0.0:8000
     LOG_LEVEL: ${SERVER_LOG_LEVEL:-info}
 

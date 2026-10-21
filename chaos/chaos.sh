@@ -106,6 +106,8 @@ case "$cmd" in
     docker compose up -d --no-recreate --scale "$svc=$n" "$svc" ;;
   cpu)
     svc=${1:?service}; cpus=${2:?cpus}; note "CPU cap $svc = $cpus"
+    # `docker update --cpus 0` leaves an existing cap in place, so "0 = no cap" means: allow every CPU Docker has.
+    if [ "$cpus" = "0" ]; then cpus=$(docker info --format '{{.NCPU}}'); fi
     docker update --cpus "$cpus" $(ids "$svc") >/dev/null ;;
   mem)
     svc=${1:?service}; mb=${2:?MB}; note "MEM cap $svc = ${mb}MB"

@@ -29,9 +29,10 @@ on the machine that ran it). Read the panels with these notes in mind:
   `system.forceSearchAttributesCacheRefreshOnRead: true`. With it, every StartWorkflowExecution reads cluster metadata
   from Postgres twice while holding the search-attribute cache lock (`cacheUpdateMutex` in
   `common/searchattribute/manager.go`), so starts are serialized on that read. In the noop ramp (2) the read ran at
-  ~1,150/s, i.e. ~575 starts/s, which is exactly where starts levelled off. Later in the day, with Postgres busier
-  (~0.1 s per read at p99), the same lock held the frontend to ~65 starts/s while history answered the same calls in
-  under 0.5 s (3C). Remove that setting before measuring start throughput.
+  ~1,150/s, i.e. ~575 starts/s, which is exactly where starts levelled off. Later in the run, with Postgres slower
+  (~0.1 s per read at p99, because it was still CPU-capped: next note), the same lock held the frontend to ~65
+  starts/s while history answered the same calls in under 0.5 s (3C). Remove that setting before measuring start
+  throughput.
 - **The worker runs SDK defaults:** 5 workflow-task pollers, split 1 normal-queue + 4 sticky. The chaos experiments
   push 50-100 chain workflows/s, far more than this worker completes, so most chaos runs complete 3-12 workflows/s
   and build a backlog. Read the shape around the fault marker, not the absolute rates.
@@ -40,6 +41,12 @@ on the machine that ran it). Read the panels with these notes in mind:
   frontend refuses the rest (`resource_exhausted_cause="ConcurrentLimit"`, ~2.9 million refusals over the day). The
   workflows did not fail. Ramps that left thousands of results pending also hit the driver's deadline and print
   `ERROR: only 0/N generator processes reported results` instead of a table; their panels are still valid.
+- **Postgres stayed capped at 0.5 CPU from 3B.2 onwards.** 3B.2 caps it with `ch cpu postgres 0.5`, and every
+  reset after it ran `ch cpu postgres 0`, which did **not** remove the cap: `docker update --cpus 0` leaves an existing
+  limit in place. So every experiment from 3B.2 (16:07 UTC) to the end, including the reruns, ran on a Postgres
+  limited to half a CPU; only the shard-count run (3B.4), which rebuilds the containers, did not. Faults and their
+  shapes are still what each experiment shows, but absolute rates and latencies from 3B.3 on are lower and slower than
+  an uncapped lab would give. `chaos/chaos.sh` now uncaps correctly (`cpu <svc> 0` allows every CPU Docker has).
 - The reset between experiments did not always finish draining the previous experiment; captions say where a panel
   shows leftovers.
 - Before this run, `lg` / `make load` used `docker compose run` **without `--no-deps`**, which quietly removed every
@@ -350,6 +357,9 @@ make workerperf ARGS="run --scenario slots --fix"                  # PASS = heal
 # rejected database calls (persistence QPS limits): four checks -> outcome A/B/C/D, and the config traps: experiments/history-persistence-qps.md
 make persistenceqps ARGS="run --scenario throttle"                 # PASS = outcome A surfaced (limit too low, DB had room)
 make persistenceqps ARGS="run --scenario raise"                    # PASS = refusals down >= 70% vs throttle, DB latency flat
+# shard IO concurrency (writes queuing inside shards; needs make reset SHARDS=4): experiments/shard-io-concurrency.md
+make shardio ARGS="run --scenario issue"                           # PASS = Steps 1-5 say raise (IO slot wait >= 20 ms, DB fast)
+make shardio ARGS="run --scenario raise2"                          # PASS = IO slot wait lower, DB and pool still fine
 # history task processing + the write-reject loop (reproduce -> playbook readings -> scheduler limits): experiments/history-task-processing.md
 make historytasks ARGS="run --scenario loop"                       # PASS = write-reject loop surfaced (indicator > 5, > 10 refused/s)
 make historytasks ARGS="calibrate" && make historytasks ARGS="run --scenario fix"   # PASS = nothing refused, tasks wait at the scheduler
@@ -524,7 +534,8 @@ pattern appears in C2 with no RPS limit set. Rerun this with `forceSearchAttribu
 **C2. Three history replicas** (rerun after the `--no-deps` fix; noop ramp 10-2000/s; 21:29:29-21:39:15). Starts
 levelled off at ~55-80/s, far below the ~550/s that one history replica reached in the Phase 2 noop ramp. Frontend
 StartWorkflowExecution p99 was ~50 s while history's was 0.46 s. The ceiling moved with Postgres read latency (the
-search-attribute lock), not with the number of history replicas.
+search-attribute lock; Postgres was still capped at 0.5 CPU, see the notes at the top), not with the number of
+history replicas.
 
 ![Membership, three history replicas](img/experiments/p3c-history3-membership.png)
 *Three history replicas for the whole run.*

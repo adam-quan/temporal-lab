@@ -18,7 +18,7 @@ TOXI_PORT := $(call envport,TOXIPROXY_HOST_PORT,8474)
 
 .DEFAULT_GOAL := help
 .PHONY: help up down nuke reset ps logs scale workers split unsplit deploy-variant smoke load probe history \
-	    count shard hotshard workerperf historytasks persistenceqps cli cli-tdbg tq tq-watch metric-names dashboard cleanup urls chaos
+	    count shard hotshard workerperf historytasks persistenceqps shardio cli cli-tdbg tq tq-watch metric-names dashboard cleanup urls chaos
 
 help: ## this list
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-16s\033[0m %s\n",$$1,$$2}'
@@ -102,6 +102,9 @@ historytasks: ## history task processing test:  make historytasks ARGS="run --sc
 
 persistenceqps: ## history persistence QPS test:  make persistenceqps ARGS="run --scenario throttle"   (list | reset; see experiments/history-persistence-qps.md)
 	$(DC) run --rm --no-deps --entrypoint python loadgen -m lab.persistenceqps $(ARGS)
+
+shardio: ## shard IO concurrency test (needs SHARDS=4): make shardio ARGS="run --scenario issue"  (experiments/shard-io-concurrency.md)
+	@tools/shardio.sh $(ARGS)
 
 cli: ## temporal CLI:  make cli ARGS="workflow list --limit 5"
 	$(DC) exec admin-tools temporal $(ARGS)
